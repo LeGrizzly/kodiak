@@ -22,6 +22,10 @@ describe("FailJobUseCase", () => {
             fetchNextJobs: jest.fn(),
             promoteDelayedJobs: jest.fn(),
             recoverStalledJobs: jest.fn(),
+            releaseJobs: jest
+                .fn<IQueueRepository<unknown>["releaseJobs"]>()
+                .mockResolvedValue(undefined),
+            extendLock: jest.fn<IQueueRepository<unknown>["extendLock"]>().mockResolvedValue(true),
         };
         failJobUseCase = new FailJobUseCase(mockQueueRepository);
     });
@@ -49,6 +53,8 @@ describe("FailJobUseCase", () => {
             "Job processing failed",
             expect.any(Date),
             undefined,
+            undefined,
+            expect.any(String),
         );
     });
 
@@ -69,6 +75,8 @@ describe("FailJobUseCase", () => {
             error.message,
             expect.any(Date),
             new Date(now + 1000),
+            undefined,
+            expect.any(String),
         );
 
         jest.useRealTimers();
@@ -97,6 +105,8 @@ describe("FailJobUseCase", () => {
             "E1",
             expect.any(Date),
             new Date(now + 1000),
+            undefined,
+            expect.any(String),
         );
 
         await failJobUseCase.execute(job2, new Error("E2"));
@@ -105,6 +115,8 @@ describe("FailJobUseCase", () => {
             "E2",
             expect.any(Date),
             new Date(now + 2000),
+            undefined,
+            expect.any(String),
         );
 
         await failJobUseCase.execute(job3, new Error("E3"));
@@ -113,6 +125,8 @@ describe("FailJobUseCase", () => {
             "E3",
             expect.any(Date),
             new Date(now + 4000),
+            undefined,
+            expect.any(String),
         );
 
         jest.useRealTimers();
@@ -142,6 +156,8 @@ describe("FailJobUseCase", () => {
             "E",
             expect.any(Date),
             new Date(now + 1000),
+            undefined,
+            expect.any(String),
         );
 
         jest.useRealTimers();
@@ -160,6 +176,8 @@ describe("FailJobUseCase", () => {
             "E",
             expect.any(Date),
             undefined,
+            undefined,
+            expect.any(String),
         );
     });
 });

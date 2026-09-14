@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "@jest/globals";
-import { Semaphore } from "../../src/utils/semaphore";
+import { Semaphore } from "../../src/utils/semaphore.js";
 
 describe("Unit: Semaphore", () => {
     let semaphore: Semaphore;

@@ -1,21 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let mockKodiak: any;
+import type { Kodiak } from "../../src/presentation/kodiak.js";
+
+let mockKodiak: Kodiak;
 
 const mockPromoteDelayedJobs = jest.fn().mockResolvedValue(0 as never);
 const mockRecoverStalledJobs = jest.fn().mockResolvedValue([] as never);
 
-jest.unstable_mockModule("../../src/infrastructure/redis/redis-queue.repository.js", () => ({
-    RedisQueueRepository: jest.fn().mockImplementation(() => ({
-        promoteDelayedJobs: mockPromoteDelayedJobs,
-        recoverStalledJobs: mockRecoverStalledJobs,
-        add: jest.fn(),
-    })),
-}));
+jest.unstable_mockModule(
+    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
+    () => ({
+        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
+            promoteDelayedJobs: mockPromoteDelayedJobs,
+            recoverStalledJobs: mockRecoverStalledJobs,
+            add: jest.fn(),
+        })),
+    }),
+);
 
 const { Queue } = await import("../../src/presentation/queue.js");
-import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 describe("Unit: Queue stalled recovery scheduler", () => {
     beforeEach(() => {

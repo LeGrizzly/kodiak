@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
-import { UpdateJobProgressUseCase } from "../../src/application/use-cases/update-job-progress.use-case";
-import type { IQueueRepository } from "../../src/domain/repositories/queue.repository";
+import { UpdateJobProgressUseCase } from "../../src/application/use-cases/update-job-progress.use-case.js";
+import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("UpdateJobProgressUseCase", () => {
     let updateJobProgressUseCase: UpdateJobProgressUseCase<unknown>;
@@ -14,7 +14,7 @@ describe("UpdateJobProgressUseCase", () => {
             markAsFailed: jest.fn(),
             updateProgress: jest
                 .fn<IQueueRepository<unknown>["updateProgress"]>()
-                .mockResolvedValue(undefined),
+                .mockResolvedValue(undefined as never),
         } as unknown as jest.Mocked<IQueueRepository<unknown>>;
         updateJobProgressUseCase = new UpdateJobProgressUseCase(mockQueueRepository);
     });

@@ -5,14 +5,19 @@ import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 const mockFetchExecute = jest.fn();
 const mockCompleteExecute = jest.fn();
+const mockCompleteManyExecute = jest.fn();
 const mockFailExecute = jest.fn();
 
-jest.unstable_mockModule("../../src/infrastructure/redis/redis-queue.repository.js", () => ({
-    RedisQueueRepository: jest.fn().mockImplementation(() => ({
-        updateProgress: jest.fn(),
-        fetchNextJobs: jest.fn(),
-    })),
-}));
+jest.unstable_mockModule(
+    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
+    () => ({
+        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
+            updateProgress: jest.fn(),
+            fetchNextJobs: jest.fn(),
+            releaseJobs: jest.fn().mockResolvedValue(undefined as never),
+        })),
+    }),
+);
 
 jest.unstable_mockModule("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
     FetchJobsUseCase: jest.fn().mockImplementation(() => ({
@@ -23,6 +28,7 @@ jest.unstable_mockModule("../../src/application/use-cases/fetch-jobs.use-case.js
 jest.unstable_mockModule("../../src/application/use-cases/complete-job.use-case.js", () => ({
     CompleteJobUseCase: jest.fn().mockImplementation(() => ({
         execute: mockCompleteExecute,
+        executeMany: mockCompleteManyExecute,
     })),
 }));
 
@@ -69,7 +75,11 @@ describe("Worker", () => {
         mockCompleteExecute.mockReset();
         mockCompleteExecute.mockResolvedValue(undefined as never);
 
+        mockCompleteManyExecute.mockReset();
+        mockCompleteManyExecute.mockResolvedValue(undefined as never);
+
         mockFailExecute.mockReset();
+
         mockFailExecute.mockResolvedValue(undefined as never);
     });
 
@@ -345,7 +355,8 @@ describe("Worker", () => {
             }),
         };
 
-        (mockKodiak as any).connection = mockRedisConnection as unknown as Redis;
+        (mockKodiak as unknown as { connection: Redis }).connection =
+            mockRedisConnection as unknown as Redis;
 
         const worker = new Worker("test-queue", processor, mockKodiak);
         const errorEmitter = jest.fn();
@@ -372,27 +383,22 @@ describe("Worker", () => {
         await worker.stop();
     });
 
-    it("should get job from buffer after lock", async () => {
+    it("should handle race conditions with concurrent buffer pop", async () => {
         const worker = new Worker("test-queue", processor, mockKodiak);
         const job1 = createMockJob({ id: "j1" });
         const job2 = createMockJob({ id: "j2" });
 
-        // @ts-expect-error - Accès privé pour le test
-        const bufferLock = worker.bufferLock as {
-            acquire: () => Promise<void>;
-            release: () => void;
-            waiters: unknown[];
-        };
+        const bufferLock = worker.bufferLock;
 
-        // @ts-expect-error - Accès privé pour le test
         worker.jobBuffers.set(0, [job1]);
 
         await bufferLock.acquire();
 
-        // @ts-expect-error - Accès privé pour le test
-        const getJobPromise = worker.getJob(0, "owner-token");
+        const workerInternal = worker as unknown as {
+            getJob: (slot: number, ownerToken: string) => Promise<Job<unknown> | null>;
+        };
+        const getJobPromise = workerInternal.getJob(0, "owner-token");
 
-        // @ts-expect-error - Accès privé pour le test
         worker.jobBuffers.get(0)?.push(job2);
         bufferLock.release();
 
@@ -407,10 +413,12 @@ describe("Worker", () => {
         const worker = new Worker("test-queue", processor, mockKodiak);
         const jobInBuffer = createMockJob({ id: "buffered-job" });
 
-        // @ts-expect-error - Accès privé pour le test
         worker.jobBuffers.set(0, [jobInBuffer]);
 
-        const getJobResult = await (worker as any).getJob(0, "owner-token");
+        const workerInternal = worker as unknown as {
+            getJob: (slot: number, ownerToken: string) => Promise<Job<unknown> | null>;
+        };
+        const getJobResult = await workerInternal.getJob(0, "owner-token");
         expect(getJobResult?.id).toBe("buffered-job");
         await worker.stop();
     });
@@ -440,10 +448,13 @@ describe("Worker", () => {
     it("should return null if job from buffer is falsy", async () => {
         const worker = new Worker("test-queue", processor, mockKodiak);
 
-        // @ts-expect-error - Pushing undefined to test falsy path
-        worker.jobBuffers.set(0, [undefined]);
+        // Pushing undefined to test falsy path
+        worker.jobBuffers.set(0, [undefined as unknown as Job<unknown>]);
 
-        const job = await (worker as any).getJob(0, "owner-token");
+        const workerInternal = worker as unknown as {
+            getJob: (slot: number, ownerToken: string) => Promise<Job<unknown> | null>;
+        };
+        const job = await workerInternal.getJob(0, "owner-token");
         expect(job).toBeNull();
 
         await worker.stop();
@@ -463,6 +474,36 @@ describe("Worker", () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
 
         expect(errorEmitter).not.toHaveBeenCalled();
+
+        await worker.stop();
+    });
+
+    it("should process jobs with ackPipelining and call executeMany on flush", async () => {
+        const worker = new Worker<{ message: string }>("test-queue", processor, mockKodiak, {
+            ackPipelining: { maxBatch: 1, maxWaitMs: 0 },
+        });
+
+        const completedEmitter = jest.fn();
+        worker.on("completed", completedEmitter);
+
+        const mockJob = createMockJob({ id: "job-pipeline-1", data: { message: "pipelined" } });
+        mockFetchExecute
+            .mockResolvedValueOnce([mockJob] as never)
+            .mockResolvedValueOnce([] as never);
+
+        processor.mockResolvedValue(undefined);
+
+        await worker.start();
+
+        await new Promise(process.nextTick);
+        await new Promise(process.nextTick);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        expect(processor).toHaveBeenCalledWith(mockJob);
+        expect(mockCompleteManyExecute).toHaveBeenCalledWith(
+            expect.arrayContaining([expect.objectContaining({ jobId: "job-pipeline-1" })]),
+        );
+        expect(completedEmitter).toHaveBeenCalledWith(mockJob);
 
         await worker.stop();
     });

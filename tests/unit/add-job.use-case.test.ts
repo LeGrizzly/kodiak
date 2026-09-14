@@ -1,6 +1,6 @@
 import { jest } from "@jest/globals";
-import { AddJobUseCase } from "../../src/application/use-cases/add-job.use-case";
-import type { IQueueRepository } from "../../src/domain/repositories/queue.repository";
+import { AddJobUseCase } from "../../src/application/use-cases/add-job.use-case.js";
+import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
 // Score calculation multiplier from AddJobUseCase implementation
 const PRIORITY_MULTIPLIER = 10000000000000;
@@ -11,19 +11,16 @@ describe("AddJobUseCase", () => {
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest
-                .fn<IQueueRepository<{ message: string }>["add"]>()
-                .mockResolvedValue(undefined),
+            add: jest.fn().mockResolvedValue(undefined as never),
             fetchNext: jest.fn(),
             markAsCompleted: jest.fn(),
             markAsFailed: jest.fn(),
-            updateProgress: jest
-                .fn<IQueueRepository<unknown>["updateProgress"]>()
-                .mockResolvedValue(undefined),
+            updateProgress: jest.fn().mockResolvedValue(undefined as never),
             fetchNextJobs: jest.fn(),
             promoteDelayedJobs: jest.fn(),
             recoverStalledJobs: jest.fn(),
-        };
+            extendLock: jest.fn(),
+        } as unknown as jest.Mocked<IQueueRepository<{ message: string }>>;
         addJobUseCase = new AddJobUseCase(mockQueueRepository);
     });
 
@@ -115,7 +112,8 @@ describe("AddJobUseCase", () => {
             false,
         );
 
-        const [, actualScore] = mockQueueRepository.add.mock.calls[0];
+        const call0 = mockQueueRepository.add.mock.calls[0];
+        const actualScore = call0?.[1] ?? 0;
         expect(actualScore).toBeGreaterThanOrEqual(minExpectedScore);
         expect(actualScore).toBeLessThanOrEqual(maxExpectedScore);
     });
@@ -133,7 +131,8 @@ describe("AddJobUseCase", () => {
         const minExpectedScore = 1 * PRIORITY_MULTIPLIER + beforeCall + delay;
         const maxExpectedScore = 1 * PRIORITY_MULTIPLIER + afterCall + delay;
 
-        const [, actualScore] = mockQueueRepository.add.mock.calls[0];
+        const call0 = mockQueueRepository.add.mock.calls[0];
+        const actualScore = call0?.[1] ?? 0;
         expect(actualScore).toBeGreaterThanOrEqual(minExpectedScore);
         expect(actualScore).toBeLessThanOrEqual(maxExpectedScore);
     });
@@ -142,12 +141,14 @@ describe("AddJobUseCase", () => {
         const data = { message: "priority comparison" };
 
         await addJobUseCase.execute("job-high", data, { priority: 1 });
-        const highPriorityScore = mockQueueRepository.add.mock.calls[0][1] as number;
+        const highPriorityScore = mockQueueRepository.add.mock.calls[0]?.[1];
 
         await addJobUseCase.execute("job-low", data, { priority: 10 });
-        const lowPriorityScore = mockQueueRepository.add.mock.calls[1][1] as number;
+        const lowPriorityScore = mockQueueRepository.add.mock.calls[1]?.[1];
 
-        expect(highPriorityScore).toBeLessThan(lowPriorityScore);
+        expect(typeof highPriorityScore).toBe("number");
+        expect(typeof lowPriorityScore).toBe("number");
+        expect(highPriorityScore ?? 0).toBeLessThan(lowPriorityScore ?? 0);
     });
 
     it("should ensure FIFO ordering within same priority", async () => {
@@ -159,14 +160,16 @@ describe("AddJobUseCase", () => {
         jest.setSystemTime(baseTime);
 
         await addJobUseCase.execute("job-first", data, { priority });
-        const firstScore = mockQueueRepository.add.mock.calls[0][1] as number;
+        const firstScore = mockQueueRepository.add.mock.calls[0]?.[1];
 
         jest.setSystemTime(baseTime + 10);
 
         await addJobUseCase.execute("job-second", data, { priority });
-        const secondScore = mockQueueRepository.add.mock.calls[1][1] as number;
+        const secondScore = mockQueueRepository.add.mock.calls[1]?.[1];
 
-        expect(firstScore).toBeLessThan(secondScore);
+        expect(typeof firstScore).toBe("number");
+        expect(typeof secondScore).toBe("number");
+        expect(firstScore ?? 0).toBeLessThan(secondScore ?? 0);
 
         jest.useRealTimers();
     });
@@ -192,7 +195,7 @@ describe("AddJobUseCase", () => {
 
         expect(result.updateProgress).toBeDefined();
         expect(typeof result.updateProgress).toBe("function");
-        await expect(result.updateProgress(100)).resolves.toBeUndefined();
+        await expect(result.updateProgress?.(100)).resolves.toBeUndefined();
     });
 
     it("should include backoff strategy when provided", async () => {
@@ -204,5 +207,15 @@ describe("AddJobUseCase", () => {
         const result = await addJobUseCase.execute(id, data, options);
 
         expect(result.backoff).toEqual(backoff);
+    });
+
+    it("should propagate traceparent when provided in options", async () => {
+        const id = "job-trace-test";
+        const data = { message: "trace test" };
+        const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+        const result = await addJobUseCase.execute(id, data, { traceparent });
+
+        expect(result.traceparent).toBe(traceparent);
     });
 });

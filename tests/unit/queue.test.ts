@@ -10,15 +10,19 @@ jest.unstable_mockModule("../../src/application/use-cases/add-job.use-case.js", 
 const mockPromoteDelayedJobs = jest.fn().mockResolvedValue(0 as never);
 const mockRecoverStalledJobs = jest.fn().mockResolvedValue([] as never);
 
-jest.unstable_mockModule("../../src/infrastructure/redis/redis-queue.repository.js", () => ({
-    RedisQueueRepository: jest.fn().mockImplementation(() => ({
-        promoteDelayedJobs: mockPromoteDelayedJobs,
-        recoverStalledJobs: mockRecoverStalledJobs,
-        add: jest.fn(),
-    })),
-}));
+jest.unstable_mockModule(
+    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
+    () => ({
+        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
+            promoteDelayedJobs: mockPromoteDelayedJobs,
+            recoverStalledJobs: mockRecoverStalledJobs,
+            add: jest.fn(),
+        })),
+    }),
+);
 
 const { Queue } = await import("../../src/presentation/queue.js");
+
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 describe("Unit: Queue", () => {
@@ -75,7 +79,6 @@ describe("Unit: Queue", () => {
 
         const queue = new Queue("test-queue", mockKodiak);
         const errorEmitter = jest.fn();
-        // @ts-expect-error - Queue may implement EventEmitter in updated code
         queue.on("error", errorEmitter);
 
         jest.advanceTimersByTime(5000);
@@ -140,12 +143,12 @@ describe("Unit: Queue", () => {
 
         let scheduledCb: (() => Promise<void>) | null = null;
 
-        const setIntervalSpy = jest
-            .spyOn(global, "setInterval")
-            .mockImplementation((cb: TimerHandler): NodeJS.Timeout => {
-                scheduledCb = cb as () => Promise<void>;
-                return 1 as unknown as NodeJS.Timeout;
-            });
+        const setIntervalSpy = jest.spyOn(global, "setInterval").mockImplementation(((
+            cb: (...args: unknown[]) => void,
+        ): NodeJS.Timeout => {
+            scheduledCb = cb as () => Promise<void>;
+            return 1 as unknown as NodeJS.Timeout;
+        }) as typeof setInterval);
 
         const queue = new Queue("test-queue", mockKodiak);
 
@@ -166,16 +169,15 @@ describe("Unit: Queue", () => {
 
         let scheduledCb: (() => Promise<void>) | null = null;
 
-        const setIntervalSpy = jest
-            .spyOn(global, "setInterval")
-            .mockImplementation((cb: TimerHandler): NodeJS.Timeout => {
-                scheduledCb = cb as () => Promise<void>;
-                return 1 as unknown as NodeJS.Timeout;
-            });
+        const setIntervalSpy = jest.spyOn(global, "setInterval").mockImplementation(((
+            cb: (...args: unknown[]) => void,
+        ): NodeJS.Timeout => {
+            scheduledCb = cb as () => Promise<void>;
+            return 1 as unknown as NodeJS.Timeout;
+        }) as typeof setInterval);
 
         const queue = new Queue("test-queue", mockKodiak);
         const errorEmitter = jest.fn();
-        // @ts-expect-error - Queue may implement EventEmitter in updated code
         queue.on("error", errorEmitter);
 
         if (typeof scheduledCb === "function") {

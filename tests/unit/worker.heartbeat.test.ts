@@ -5,15 +5,18 @@ import type { Kodiak } from "../../src/presentation/kodiak.js";
 const mockExtendLock = jest.fn();
 const mockFetchExecute = jest.fn();
 
-jest.unstable_mockModule("../../src/infrastructure/redis/redis-queue.repository.js", () => ({
-    RedisQueueRepository: jest.fn().mockImplementation(() => ({
-        updateProgress: jest.fn(),
-        fetchNextJobs: jest.fn(),
-        extendLock: mockExtendLock,
-        markAsFailed: jest.fn().mockResolvedValue(undefined as never),
-        markAsCompleted: jest.fn().mockResolvedValue(undefined as never),
-    })),
-}));
+jest.unstable_mockModule(
+    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
+    () => ({
+        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
+            updateProgress: jest.fn(),
+            fetchNextJobs: jest.fn(),
+            extendLock: mockExtendLock,
+            markAsFailed: jest.fn().mockResolvedValue(undefined as never),
+            markAsCompleted: jest.fn().mockResolvedValue(undefined as never),
+        })),
+    }),
+);
 
 jest.unstable_mockModule("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
     FetchJobsUseCase: jest.fn().mockImplementation(() => ({
@@ -85,10 +88,10 @@ describe("Worker heartbeat", () => {
         await worker.stop();
 
         expect(mockExtendLock).toHaveBeenCalled();
-        const callArgs = mockExtendLock.mock.calls[0];
-        expect(callArgs[0]).toBe("hb-job");
-        expect(typeof callArgs[1]).toBe("number");
-        expect(typeof callArgs[2]).toBe("string");
+        const callArgs = mockExtendLock.mock.calls[0] as [string, number, string];
+        expect(callArgs?.[0]).toBe("hb-job");
+        expect(typeof callArgs?.[1]).toBe("number");
+        expect(typeof callArgs?.[2]).toBe("string");
     });
 
     it("emits error when extendLock throws inside heartbeat", async () => {

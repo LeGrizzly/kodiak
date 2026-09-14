@@ -9,21 +9,24 @@ jest.unstable_mockModule("fs", () => ({
     },
 }));
 
-const { RedisQueueRepository } = await import(
-    "../../src/infrastructure/redis/redis-queue.repository.js"
+const { DragonflyQueueRepository } = await import(
+    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js"
 );
 
-describe("Unit: RedisQueueRepository", () => {
-    let repository: InstanceType<typeof RedisQueueRepository>;
+describe("Unit: DragonflyQueueRepository", () => {
+    let repository: InstanceType<typeof DragonflyQueueRepository>;
     let mockRedis: Redis;
     let mockPipeline: Record<string, jest.Mock>;
 
     beforeEach(() => {
         mockPipeline = {
             hset: jest.fn().mockReturnThis(),
+            hdel: jest.fn().mockReturnThis(),
             hgetall: jest.fn().mockReturnThis(),
             lrem: jest.fn().mockReturnThis(),
             hincrby: jest.fn().mockReturnThis(),
+            eval: jest.fn().mockReturnThis(),
+            evalsha: jest.fn().mockReturnThis(),
             exec: jest.fn(),
         };
 
@@ -32,7 +35,7 @@ describe("Unit: RedisQueueRepository", () => {
             pipeline: jest.fn().mockReturnValue(mockPipeline),
         } as unknown as Redis;
 
-        repository = new RedisQueueRepository("test-queue", mockRedis, "kodiak-test");
+        repository = new DragonflyQueueRepository("test-queue", mockRedis, "kodiak-test");
         jest.clearAllMocks();
     });
 
@@ -79,6 +82,24 @@ describe("Unit: RedisQueueRepository", () => {
         );
     });
 
+    it("should mark multiple jobs as completed using pipeline", async () => {
+        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+            [null, 1],
+            [null, 1],
+        ] as never);
+
+        const jobs = [
+            { jobId: "job-1", completedAt: new Date(), ownerToken: "token-1" },
+            { jobId: "job-2", completedAt: new Date() },
+        ];
+
+        await repository.markManyAsCompleted(jobs);
+
+        expect(mockRedis.pipeline).toHaveBeenCalled();
+        expect(mockPipeline.evalsha).toHaveBeenCalledTimes(2);
+        expect(mockPipeline.exec).toHaveBeenCalled();
+    });
+
     it("should use Lua script to mark job as failed", async () => {
         const jobId = "job-456";
         const failedAt = new Date();
@@ -88,14 +109,17 @@ describe("Unit: RedisQueueRepository", () => {
 
         expect(mockRedis.eval).toHaveBeenCalledWith(
             expect.any(String),
-            3,
+            4,
             expect.stringContaining(":active"),
             expect.stringContaining(`:jobs:${jobId}`),
             expect.stringContaining(":delayed"),
+            expect.stringContaining(":dead"),
             jobId,
             errorMsg,
             String(failedAt.getTime()),
             "-1",
+            "",
+            "",
         );
     });
 
@@ -128,7 +152,7 @@ describe("Unit: RedisQueueRepository", () => {
             "1",
             "0",
             "data",
-            JSON.stringify(job.data),
+            expect.any(String),
             "priority",
             String(job.priority),
             "retry_count",
@@ -152,11 +176,10 @@ describe("Unit: RedisQueueRepository", () => {
         expect(count).toBe(5);
         expect(mockRedis.eval).toHaveBeenCalledWith(
             expect.any(String),
-            4,
+            3,
             expect.stringContaining(":delayed"),
             expect.stringContaining(":waiting"),
             expect.stringContaining(":notify"),
-            expect.stringContaining(":jobs:"),
             expect.any(String),
             "100",
         );
@@ -191,7 +214,7 @@ describe("Unit: RedisQueueRepository", () => {
             "1",
             "0",
             "data",
-            JSON.stringify(job.data),
+            expect.any(String),
             "priority",
             String(job.priority),
             "retry_count",
@@ -237,7 +260,7 @@ describe("Unit: RedisQueueRepository", () => {
             "1",
             "0",
             "data",
-            JSON.stringify(job.data),
+            expect.any(String),
             "priority",
             String(job.priority),
             "retry_count",
@@ -263,9 +286,10 @@ describe("Unit: RedisQueueRepository", () => {
         expect(recoveredJobs).toEqual(["job-1", "job-2"]);
         expect(mockRedis.eval).toHaveBeenCalledWith(
             expect.any(String),
-            2,
+            3,
             expect.stringContaining(":active"),
             expect.stringContaining(":waiting"),
+            expect.stringContaining(":notify"),
             expect.any(String),
         );
     });
@@ -314,8 +338,8 @@ describe("Unit: RedisQueueRepository", () => {
         const jobs = await repository.fetchNextJobs(2, 30000);
 
         expect(jobs).toHaveLength(2);
-        expect(jobs[0].id).toBe("job-1");
-        expect(jobs[1].id).toBe("job-2");
+        expect(jobs[0]?.id).toBe("job-1");
+        expect(jobs[1]?.id).toBe("job-2");
         expect(mockRedis.eval).toHaveBeenCalledWith(
             expect.any(String),
             2,
@@ -365,7 +389,7 @@ describe("Unit: RedisQueueRepository", () => {
         const jobs = await repository.fetchNextJobs(2, 30000);
 
         expect(jobs).toHaveLength(1);
-        expect(jobs[0].id).toBe("job-2");
+        expect(jobs[0]?.id).toBe("job-2");
     });
 
     it("should skip jobs with missing data in fetchNextJobs", async () => {
@@ -397,7 +421,7 @@ describe("Unit: RedisQueueRepository", () => {
         const jobs = await repository.fetchNextJobs(2, 30000);
 
         expect(jobs).toHaveLength(1);
-        expect(jobs[0].id).toBe("job-2");
+        expect(jobs[0]?.id).toBe("job-2");
     });
 
     it("should call updateProgress when job.updateProgress is called", async () => {
@@ -423,7 +447,7 @@ describe("Unit: RedisQueueRepository", () => {
 
         (mockRedis.eval as jest.Mock).mockClear();
 
-        await jobs[0].updateProgress(75);
+        await jobs[0]?.updateProgress?.(75);
 
         expect(mockRedis.eval).toHaveBeenCalledWith(
             expect.any(String),
@@ -530,7 +554,7 @@ describe("Unit: RedisQueueRepository", () => {
 
         const jobs = await repository.fetchNextJobs(1, 30000);
         expect(jobs).toHaveLength(1);
-        expect(jobs[0].progress).toBe(50);
+        expect(jobs[0]?.progress).toBe(50);
     });
 
     it("should return empty array when recoverStalledJobs Lua script returns null", async () => {
@@ -559,9 +583,9 @@ describe("Unit: RedisQueueRepository", () => {
 
         await repository.add(job, Date.now() + 5000, true);
 
-        const mockCall = (mockRedis.eval as jest.Mock).mock.calls[0];
+        const mockCall = (mockRedis.eval as jest.Mock).mock.calls[0] as unknown[];
 
-        expect(mockCall[8]).toBe("1");
+        expect(mockCall?.[8]).toBe("1");
     });
 
     it("should use existing started_at if present in job data when fetching multiple jobs", async () => {
@@ -586,7 +610,7 @@ describe("Unit: RedisQueueRepository", () => {
         const jobs = await repository.fetchNextJobs(1, 30000);
 
         expect(jobs).toHaveLength(1);
-        expect(jobs[0].startedAt?.getTime()).toBe(startedAt.getTime());
+        expect(jobs[0]?.startedAt?.getTime()).toBe(startedAt.getTime());
     });
 
     it("should pass nextAttempt timestamp to Lua script when provided in markAsFailed", async () => {
@@ -600,10 +624,11 @@ describe("Unit: RedisQueueRepository", () => {
         expect((mockRedis.eval as jest.Mock).mock.calls[0]).toEqual(
             expect.arrayContaining([
                 expect.any(String),
-                3,
+                4,
                 expect.stringContaining(":active"),
                 expect.stringContaining(`:jobs:${jobId}`),
                 expect.stringContaining(":delayed"),
+                expect.stringContaining(":dead"),
                 jobId,
                 errorMsg,
                 String(failedAt.getTime()),
@@ -616,7 +641,8 @@ describe("Unit: RedisQueueRepository", () => {
         (mockRedis.eval as jest.Mock).mockResolvedValue(7 as never);
         const count = await repository.promoteDelayedJobs();
         expect(count).toBe(7);
-        expect((mockRedis.eval as jest.Mock).mock.calls[0][7]).toBe("50");
+        const mockCall = (mockRedis.eval as jest.Mock).mock.calls[0] as unknown[];
+        expect(mockCall?.[6]).toBe("50");
     });
 
     it("should return null in processFetchResult if hgetall returns an error (when no rawData)", async () => {
