@@ -1,5 +1,5 @@
 {
-    "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+    "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
     "vcs": {
         "enabled": true,
         "clientKind": "git",
@@ -7,12 +7,13 @@
     },
     "files": {
         "ignoreUnknown": false,
-        "ignore": [
-            "**/node_modules/**",
-            "**/dist/**",
-            "**/coverage/**",
-            "**/graphify-out/**",
-            "**/[Kodiak] - BRAIN/**"
+        "includes": [
+            "**",
+            "!**/node_modules/**",
+            "!**/dist/**",
+            "!**/coverage/**",
+            "!**/graphify-out/**",
+            "!**/\\[Kodiak\\] - BRAIN/**"
         ]
     },
     "formatter": {
@@ -24,9 +25,7 @@
         "lineWidth": 100,
         "attributePosition": "auto"
     },
-    "organizeImports": {
-        "enabled": true
-    },
+    "assist": { "actions": { "source": { "organizeImports": "on" } } },
     "linter": {
         "enabled": true,
         "rules": {
@@ -61,7 +60,7 @@
     },
     "overrides": [
         {
-            "include": ["src/**"],
+            "includes": ["**/src/**"],
             "linter": {
                 "rules": {
                     "suspicious": {
