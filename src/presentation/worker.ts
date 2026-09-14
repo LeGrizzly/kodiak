@@ -1,192 +1,388 @@
-import { EventEmitter } from 'events';
-import { Redis } from 'ioredis';
-import { Kodiak } from './kodiak.js';
-import { FetchJobUseCase } from '../application/use-cases/fetch-job.use-case.js';
-import { CompleteJobUseCase } from '../application/use-cases/complete-job.use-case.js';
-import { FailJobUseCase } from '../application/use-cases/fail-job.use-case.js';
-import { UpdateJobProgressUseCase } from '../application/use-cases/update-job-progress.use-case.js';
-import { RedisQueueRepository } from '../infrastructure/redis/redis-queue.repository.js';
-import { Semaphore } from '../utils/semaphore.js';
-import type { WorkerOptions } from '../application/dtos/worker-options.dto.js';
-import type { Job } from '../domain/entities/job.entity.js';
+import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { setTimeout } from "node:timers/promises";
+import type { JobContext } from "../application/dtos/job-context.dto.js";
+import { JobContextPool } from "../application/dtos/job-context-pool.js";
+import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
+import { CreditFlowController } from "../application/flow-control/credit-flow-controller.js";
+import { CompleteJobUseCase } from "../application/use-cases/complete-job.use-case.js";
+import { FailJobUseCase } from "../application/use-cases/fail-job.use-case.js";
+import { FetchJobsUseCase } from "../application/use-cases/fetch-jobs.use-case.js";
+import { ReleaseJobsUseCase } from "../application/use-cases/release-jobs.use-case.js";
+import { UpdateJobProgressUseCase } from "../application/use-cases/update-job-progress.use-case.js";
+import type { Job } from "../domain/entities/job.entity.js";
+import type { IQueueRepository } from "../domain/repositories/queue.repository.js";
+import { DragonflyQueueRepository } from "../infrastructure/dragonfly/dragonfly-queue.repository.js";
+import { Semaphore } from "../utils/semaphore.js";
+import { AdaptivePrefetchManager } from "./adaptive-prefetch.js";
+import type { Kodiak } from "./kodiak.js";
+import { WorkerAckBuffer } from "./worker-ack-buffer.js";
+import { WorkerHeartbeatManager } from "./worker-heartbeat.js";
+
+export type WorkerProcessor<T> = (context: JobContext<T> & Job<T>) => Promise<void>;
+
+export interface WorkerTelemetry {
+    fetchCount: number;
+    fetchDurationMs: number;
+    processCount: number;
+    processDurationMs: number;
+    ackCount: number;
+    ackDurationMs: number;
+    idleDurationMs: number;
+}
 
 export class Worker<T> extends EventEmitter {
-    private fetchJobUseCases: FetchJobUseCase<T>[] = [];
+    private readonly fetchJobsUseCase: FetchJobsUseCase<T>;
     private readonly completeJobUseCase: CompleteJobUseCase<T>;
     private readonly failJobUseCase: FailJobUseCase<T>;
     private readonly updateJobProgressUseCase: UpdateJobProgressUseCase<T>;
+    private readonly releaseJobsUseCase: ReleaseJobsUseCase<T>;
+    private readonly ackQueueRepository: IQueueRepository<T>;
+    private readonly blockingConnection: { disconnect: () => void };
+    private readonly ackConnection: { disconnect: () => void };
+    private readonly processingSemaphore: Semaphore;
+    private readonly workerId: string;
+    private readonly processingPromises: Promise<void>[] = [];
+    private readonly prefetchManager: AdaptivePrefetchManager;
+    private readonly ackBuffer?: WorkerAckBuffer<T>;
+    private readonly contextPool: JobContextPool<T>;
+    private readonly creditController: CreditFlowController;
+
+    // Slot prefetch buffers and lock exposed for test introspection
+    public readonly jobBuffers = new Map<number, Job<T>[]>();
+    public readonly bufferLock: Semaphore = new Semaphore(1);
+
     private isRunning = false;
     private activeJobs = 0;
-    private blockingConnections: Redis[] = [];
-    private ackConnection: Redis;
-    private slotErrors: number[] = [];
-    private processingSemaphore: Semaphore | null = null;
+
+    private readonly telemetryData: WorkerTelemetry = {
+        fetchCount: 0,
+        fetchDurationMs: 0,
+        processCount: 0,
+        processDurationMs: 0,
+        ackCount: 0,
+        ackDurationMs: 0,
+        idleDurationMs: 0,
+    };
+
+    public get activeCount(): number {
+        return this.activeJobs;
+    }
+
+    public getTelemetry(): WorkerTelemetry {
+        return { ...this.telemetryData };
+    }
 
     constructor(
         public readonly name: string,
-        private processor: (job: Job<T>) => Promise<void>,
+        private processor: WorkerProcessor<T>,
         private readonly kodiak: Kodiak,
         private opts?: WorkerOptions,
+        repositories?: { ack: IQueueRepository<T>; blocking: IQueueRepository<T> },
     ) {
         super();
 
-        this.ackConnection = kodiak.connection.duplicate();
+        const ackConn = this.kodiak.connection.duplicate();
+        const blkConn = this.kodiak.connection.duplicate();
+        this.ackConnection = ackConn;
+        this.blockingConnection = blkConn;
 
-        const ackQueueRepository = new RedisQueueRepository<T>(
-            name,
-            this.ackConnection,
-            kodiak.prefix,
-        );
+        const serializer = opts?.serializer ?? kodiak.serializer;
+        this.ackQueueRepository =
+            repositories?.ack ??
+            new DragonflyQueueRepository<T>(name, ackConn, kodiak.prefix, serializer);
+        const blockingRepo =
+            repositories?.blocking ??
+            new DragonflyQueueRepository<T>(name, blkConn, kodiak.prefix, serializer);
 
-        this.completeJobUseCase = new CompleteJobUseCase<T>(ackQueueRepository);
+        this.workerId = `${process.pid}-${randomUUID()}`;
+        this.fetchJobsUseCase = new FetchJobsUseCase<T>(blockingRepo);
+        this.completeJobUseCase = new CompleteJobUseCase<T>(this.ackQueueRepository);
         this.failJobUseCase = new FailJobUseCase<T>(
-            ackQueueRepository,
-            opts?.backoffStrategies
+            this.ackQueueRepository,
+            opts?.backoffStrategies,
         );
-        this.updateJobProgressUseCase = new UpdateJobProgressUseCase<T>(ackQueueRepository);
+        this.updateJobProgressUseCase = new UpdateJobProgressUseCase<T>(this.ackQueueRepository);
+        this.releaseJobsUseCase = new ReleaseJobsUseCase<T>(this.ackQueueRepository);
+
+        const concurrency = this.opts?.concurrency ?? 1;
+        this.processingSemaphore = new Semaphore(concurrency);
+        this.prefetchManager = new AdaptivePrefetchManager(concurrency, this.opts?.prefetch);
+
+        const ackPipelining = this.opts?.ackPipelining;
+        const isAckPipeliningEnabled =
+            ackPipelining === true ||
+            (typeof ackPipelining === "object" && ackPipelining.enabled !== false);
+
+        if (isAckPipeliningEnabled) {
+            const pipeliningOpts = typeof ackPipelining === "object" ? ackPipelining : {};
+            this.ackBuffer = new WorkerAckBuffer<T>(this.completeJobUseCase, {
+                maxBatch: pipeliningOpts.maxBatch,
+                maxWaitMs: pipeliningOpts.maxWaitMs,
+                onCompleted: (job) => this.emit("completed", job),
+                onError: (err) => this.emit("error", err),
+                onBatchFlushed: (count, durationMs) => {
+                    if (this.opts?.telemetry) {
+                        this.telemetryData.ackCount += count;
+                        this.telemetryData.ackDurationMs += durationMs;
+                    }
+                },
+            });
+        }
+
+        const lockDuration = this.opts?.lockDuration ?? 30_000;
+        this.contextPool = new JobContextPool<T>(this.name, {
+            heartbeatFactory: () => async (jobId, ownerToken) => {
+                const expiresAt = Date.now() + lockDuration;
+                return this.ackQueueRepository.extendLock(jobId, expiresAt, ownerToken);
+            },
+            updateProgressFactory: () => async (jobId, progress) => {
+                await this.updateJobProgressUseCase.execute(jobId, progress);
+                this.emit("progress", { id: jobId } as Job<T>, progress);
+            },
+        });
+
+        const creditsOption = this.opts?.credits;
+        const maxCredits =
+            typeof creditsOption === "number"
+                ? creditsOption
+                : typeof creditsOption === "object"
+                  ? creditsOption.maxCredits
+                  : concurrency * 20;
+        const replenishThreshold =
+            typeof creditsOption === "object" ? creditsOption.replenishBatchThreshold : undefined;
+
+        this.creditController = new CreditFlowController({
+            maxCredits,
+            replenishBatchThreshold: replenishThreshold,
+        });
     }
 
-    /**
-     * Start the worker processing loop.
-     * Continuously fetches and processes jobs until stop() is called.
-     */
     public async start(): Promise<void> {
         if (this.isRunning) {
             throw new Error(`Worker "${this.name}" is already running`);
         }
         this.isRunning = true;
-        this.emit('start');
-        
+        this.emit("start");
+
         const concurrency = this.opts?.concurrency ?? 1;
-        const prefetch = this.opts?.prefetch ?? 0;
-
-        const totalSlots = concurrency + prefetch;
-
-        this.processingSemaphore = new Semaphore(concurrency);
-
-        this.slotErrors = new Array(totalSlots).fill(0);
-
-        for (let i = 0; i < totalSlots; i++) {
-            const blockingConnection = this.kodiak.connection.duplicate();
-            this.blockingConnections.push(blockingConnection);
-
-            const blockingQueueRepository = new RedisQueueRepository<T>(
-                this.name,
-                blockingConnection,
-                this.kodiak.prefix,
-            );
-
-            this.fetchJobUseCases.push(new FetchJobUseCase<T>(blockingQueueRepository));
-            this.processNext(i);
+        for (let i = 0; i < concurrency; i++) {
+            this.jobBuffers.set(i, []);
+            this.processingPromises.push(this.processSlotLoop(i));
         }
     }
 
-    /**
-     * Stop the worker gracefully.
-     * Wait for active jobs to complete before returning.
-     */
     public async stop(): Promise<void> {
         this.isRunning = false;
+        this.disconnectSafe(this.blockingConnection);
 
-        while (this.activeJobs > 0) {
-            await new Promise(resolve => setTimeout(resolve, 100));
+        const shutdownTimeout = this.opts?.gracefulShutdownTimeout ?? 30000;
+        const ac = new AbortController();
+        const timeoutPromise = setTimeout(shutdownTimeout, undefined, {
+            signal: ac.signal,
+            ref: false,
+        }).then(() => {
+            throw new Error(`Graceful shutdown timed out after ${shutdownTimeout}ms`);
+        });
+
+        try {
+            await Promise.race([Promise.all(this.processingPromises), timeoutPromise]);
+            if (this.ackBuffer) {
+                await this.ackBuffer.drain();
+            }
+        } catch (error: unknown) {
+            if (!(error instanceof Error && error.name === "AbortError")) {
+                this.emit("error", error);
+            }
+        } finally {
+            ac.abort();
         }
 
-        await Promise.all(this.blockingConnections.map(c => c.quit()));
-        this.blockingConnections = [];
-        this.fetchJobUseCases = [];
-
-        await this.ackConnection.quit();
-
-        this.emit('stop');
+        await this.releaseUnconsumedJobs();
+        this.disconnectSafe(this.ackConnection);
+        this.emit("stop");
     }
 
-    /**
-     * Internal: Process the next job in the queue.
-     * Called recursively to form a continuous loop.
-     */
-    private processNext(slotIndex: number): void {
-        if (!this.isRunning) {
-            return;
+    private async releaseUnconsumedJobs(): Promise<void> {
+        await this.bufferLock.acquire();
+        try {
+            const unconsumedIds: string[] = [];
+            for (const [slot, buffer] of this.jobBuffers.entries()) {
+                while (buffer.length > 0) {
+                    const item = buffer.shift();
+                    if (item) unconsumedIds.push(item.id);
+                }
+                this.jobBuffers.set(slot, []);
+            }
+            if (unconsumedIds.length > 0) {
+                await this.releaseJobsUseCase.execute(unconsumedIds);
+                this.creditController.replenish(unconsumedIds.length);
+            }
+        } catch (error) {
+            this.emit("error", error);
+        } finally {
+            this.bufferLock.release();
+        }
+    }
+
+    private disconnectSafe(conn: { disconnect: () => void }): void {
+        try {
+            conn.disconnect();
+        } catch (error) {
+            this.emit("error", error);
+        }
+    }
+
+    public async getJob(slotIndex: number, ownerToken: string): Promise<Job<T> | null> {
+        const buffered = this.jobBuffers.get(slotIndex) ?? [];
+        if (buffered.length > 0) {
+            const nextJob = buffered.shift() ?? null;
+            this.jobBuffers.set(slotIndex, buffered);
+            return nextJob;
         }
 
-        const concurrency = this.opts?.concurrency ?? 1;
-        const prefetch = this.opts?.prefetch ?? 0;
-        const totalSlots = concurrency + prefetch;
-        
-        if (this.fetchJobUseCases.length > totalSlots) {
-            return;
+        await this.bufferLock.acquire();
+        try {
+            if (!this.creditController.hasCredit()) {
+                return null;
+            }
+            const desired = this.prefetchManager.getSize();
+            const grantedCredits = this.creditController.consume(desired);
+            if (grantedCredits <= 0) {
+                return null;
+            }
+
+            const lockDuration = this.opts?.lockDuration ?? 30_000;
+            const t0 = this.opts?.telemetry ? performance.now() : 0;
+            const jobs = await this.fetchJobsUseCase.execute(
+                grantedCredits,
+                lockDuration,
+                ownerToken,
+            );
+            if (this.opts?.telemetry) {
+                this.telemetryData.fetchCount++;
+                this.telemetryData.fetchDurationMs += performance.now() - t0;
+            }
+
+            const fetchedCount = jobs ? jobs.length : 0;
+            this.prefetchManager.recordFetchResult(fetchedCount);
+
+            if (fetchedCount < grantedCredits) {
+                this.creditController.replenish(grantedCredits - fetchedCount);
+            }
+
+            if (jobs && jobs.length > 0) {
+                const remaining = jobs.slice();
+                const job = remaining.shift() as Job<T>;
+                this.jobBuffers.set(slotIndex, remaining);
+                return job ?? null;
+            }
+            return null;
+        } finally {
+            this.bufferLock.release();
         }
+    }
 
-        const fetchUseCase = this.fetchJobUseCases[slotIndex];
-
-        if (!fetchUseCase) {
-            return;
-        }
-
-        fetchUseCase
-            .execute(2)
-            .then(async (job: Job<T> | null) => {
-                this.slotErrors[slotIndex] = 0;
-
+    private async processSlotLoop(slotIndex: number): Promise<void> {
+        const ownerToken = `${this.workerId}:${slotIndex}`;
+        while (this.isRunning) {
+            try {
+                const job = await this.getJob(slotIndex, ownerToken);
                 if (job) {
-                    this.activeJobs++;
-
-                    const updateProgress = async (progress: number) => {
-                        await this.updateJobProgressUseCase.execute(job.id, progress);
-                        job.progress = progress;
-                        this.emit('progress', job, progress);
-                    };
-                    job.updateProgress = updateProgress;
-
-                    try {
-                        if (this.processingSemaphore) {
-                            await this.processingSemaphore.acquire();
-                        }
-                        
-                        await this.processor(job);
-
-                        await this.completeJobUseCase.execute(job.id);
-                        job.status = 'completed';
-                        job.completedAt = new Date();
-                        this.emit('completed', job);
-                    } catch (error) {
-                        const err = error instanceof Error ? error : new Error(String(error));
-                        await this.failJobUseCase.execute(job, err);
-                        job.status = 'failed';
-                        job.failedAt = new Date();
-                        job.error = err.message;
-                        this.emit('failed', job, err);
-                    } finally {
-                        if (this.processingSemaphore) {
-                            this.processingSemaphore.release();
-                        }
-                        this.activeJobs--;
-                    }
-                } else {
-                    // No job available, loop again immediately (checking isRunning)
-                    // We already blocked for 2s, so no need to sleep more
-                }
-            })
-            .catch((error: Error) => {
-                if (!this.isRunning && (error.message === 'Connection is closed' || error.message.includes('Connection is closed'))) {
-                    return;
-                }
-                
-                this.slotErrors[slotIndex]++;
-                this.emit('error', error);
-            })
-            .finally(() => {
-                if (this.isRunning) {
-                    const errorCount = this.slotErrors[slotIndex];
-                    if (errorCount > 0) {
-                        const delay = Math.min(1000 * Math.pow(2, errorCount - 1), 30000);
-                        setTimeout(() => this.processNext(slotIndex), delay);
-                    } else {
-                        // Use setImmediate to avoid stack overflow and allow GC
-                        setImmediate(() => this.processNext(slotIndex));
+                    await this.executeJobWithLifecycle(job, ownerToken);
+                } else if (this.isRunning) {
+                    const t0 = this.opts?.telemetry ? performance.now() : 0;
+                    await setTimeout(100);
+                    if (this.opts?.telemetry) {
+                        this.telemetryData.idleDurationMs += performance.now() - t0;
                     }
                 }
-            });
+            } catch (error) {
+                if (error instanceof Error) {
+                    this.emit("error", error);
+                }
+            }
+        }
+    }
+
+    private async executeJobWithLifecycle(job: Job<T>, ownerToken: string): Promise<void> {
+        this.activeJobs++;
+        job.startedAt = job.startedAt ?? new Date();
+        this.attachJobProgressReporter(job);
+
+        const heartbeat = this.createHeartbeat();
+        const pooledContext = this.contextPool.acquire(job, ownerToken);
+        const context = Object.assign(job, {
+            logger: pooledContext.logger,
+            heartbeat: pooledContext.heartbeat,
+        }) as JobContext<T> & Job<T>;
+        await this.processingSemaphore.acquire();
+
+        try {
+            if (heartbeat) heartbeat.start(job.id, ownerToken);
+            const t0 = this.opts?.telemetry ? performance.now() : 0;
+            await this.processor(context);
+            if (this.opts?.telemetry) {
+                this.telemetryData.processCount++;
+                this.telemetryData.processDurationMs += performance.now() - t0;
+            }
+            await this.finalizeJobSuccess(job);
+        } catch (error) {
+            await this.finalizeJobFailure(job, error);
+        } finally {
+            if (heartbeat) heartbeat.stop();
+            this.contextPool.release(pooledContext);
+            this.creditController.replenish(1);
+            this.processingSemaphore.release();
+            this.activeJobs--;
+        }
+    }
+
+    private attachJobProgressReporter(job: Job<T>): void {
+        job.updateProgress = async (progress: number) => {
+            await this.updateJobProgressUseCase.execute(job.id, progress);
+            job.progress = progress;
+            this.emit("progress", job, progress);
+        };
+    }
+
+    private createHeartbeat(): WorkerHeartbeatManager<T> | null {
+        if (!this.opts?.heartbeatEnabled) return null;
+        const lockDuration = this.opts?.lockDuration ?? 30_000;
+        const interval =
+            this.opts?.heartbeatInterval ?? Math.max(1000, Math.floor(lockDuration / 2));
+
+        return new WorkerHeartbeatManager<T>(
+            this.ackQueueRepository,
+            lockDuration,
+            interval,
+            (err) => this.emit("error", err),
+        );
+    }
+
+    private async finalizeJobSuccess(job: Job<T>): Promise<void> {
+        if (this.ackBuffer) {
+            void this.ackBuffer.push(job);
+            return;
+        }
+
+        const t0 = this.opts?.telemetry ? performance.now() : 0;
+        await this.completeJobUseCase.execute(job.id);
+        if (this.opts?.telemetry) {
+            this.telemetryData.ackCount++;
+            this.telemetryData.ackDurationMs += performance.now() - t0;
+        }
+        job.status = "completed";
+        job.completedAt = new Date();
+        this.emit("completed", job);
+    }
+
+    private async finalizeJobFailure(job: Job<T>, rawError: unknown): Promise<void> {
+        const error = rawError instanceof Error ? rawError : new Error(String(rawError));
+        await this.failJobUseCase.execute(job, error);
+        job.status = "failed";
+        job.failedAt = new Date();
+        job.error = error.message;
+        this.emit("failed", job, error);
     }
 }

@@ -39,3 +39,9 @@ jspm_packages/
 
 # TypeScript cache files
 *.tsbuildinfo
+
+# Accidental build outputs in source
+src/**/*.js
+src/**/*.d.ts
+src/**/*.d.ts.map
+src/**/*.js.map

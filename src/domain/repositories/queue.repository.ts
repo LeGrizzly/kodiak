@@ -1,9 +1,28 @@
-import type { Job } from '../entities/job.entity.js';
+import type { Job } from "../entities/job.entity.js";
+
+export interface BatchCompletedJob {
+    jobId: string;
+    completedAt: Date;
+    ownerToken?: string;
+}
 
 export interface IQueueRepository<T> {
     add(job: Job<T>, score: number, isDelayed: boolean): Promise<void>;
     fetchNext(timeout?: number): Promise<Job<T> | null>;
-    markAsCompleted(jobId: string, completedAt: Date): Promise<void>;
-    markAsFailed(jobId: string, error: string, failedAt: Date, nextAttempt?: Date): Promise<void>;
+    fetchNextJobs(count: number, lockDuration: number, ownerToken?: string): Promise<Job<T>[]>;
+    markAsCompleted(jobId: string, completedAt: Date, ownerToken?: string): Promise<void>;
+    markManyAsCompleted?(jobs: BatchCompletedJob[]): Promise<void>;
+    markAsFailed(
+        jobId: string,
+        error: string,
+        failedAt: Date,
+        nextAttempt?: Date,
+        ownerToken?: string,
+        errorStack?: string,
+    ): Promise<void>;
     updateProgress(jobId: string, progress: number): Promise<void>;
+    promoteDelayedJobs(limit?: number): Promise<number>;
+    recoverStalledJobs(): Promise<string[]>;
+    extendLock(jobId: string, lockExpiresAt: number, ownerToken?: string): Promise<boolean>;
+    releaseJobs(jobIds: string[]): Promise<void>;
 }

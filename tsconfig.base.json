@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        // Target & Modules
+        "target": "ES2024",
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "lib": ["ES2024"],
+
+        // Strict Type-Checking Options
+        "strict": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictPropertyInitialization": false,
+        "noImplicitReturns": true,
+        "noUncheckedIndexedAccess": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+
+        // Code Quality Options
+        "allowUnreachableCode": false,
+        "allowUnusedLabels": false,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+
+        // Interoperability & System
+        "resolveJsonModule": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "isolatedModules": true,
+        "skipLibCheck": true,
+
+        // Emit & Developer Experience
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true
+    }
+}
