@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
@@ -127,7 +127,6 @@ describe("Worker heartbeat", () => {
         await worker.start();
 
         await new Promise((resolve) => setTimeout(resolve, 120));
-
 
         await worker.stop();
 

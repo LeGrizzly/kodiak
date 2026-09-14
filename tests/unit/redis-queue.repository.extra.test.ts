@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach } from "@jest/globals";
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
 
 jest.unstable_mockModule("fs", () => ({
@@ -6,7 +6,9 @@ jest.unstable_mockModule("fs", () => ({
     default: { readFileSync: jest.fn().mockReturnValue("return 1") },
 }));
 
-const { RedisQueueRepository } = await import("../../src/infrastructure/redis/redis-queue.repository.js");
+const { RedisQueueRepository } = await import(
+    "../../src/infrastructure/redis/redis-queue.repository.js"
+);
 
 describe("RedisQueueRepository extra coverage", () => {
     let mockRedis: Partial<Redis> & { pipeline: jest.Mock };
@@ -41,7 +43,10 @@ describe("RedisQueueRepository extra coverage", () => {
         };
 
         (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([ [null, "OK"], [null, jobData] ]);
+        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+            [null, "OK"],
+            [null, jobData],
+        ]);
 
         const jobs = await repo.fetchNextJobs(1, 1000);
 

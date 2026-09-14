@@ -1,8 +1,8 @@
-import { jest, describe, it, expect, beforeEach } from "@jest/globals";
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { FailJobUseCase } from "../../src/application/use-cases/fail-job.use-case.js";
-import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
-import { BackoffStrategy } from "../../src/domain/strategies/backoff.strategy.js";
+import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
+import type { BackoffStrategy } from "../../src/domain/strategies/backoff.strategy.js";
 
 describe("FailJobUseCase", () => {
     let failJobUseCase: FailJobUseCase<unknown>;

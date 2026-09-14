@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 const mockExecute = jest.fn();
 jest.unstable_mockModule("../../src/application/use-cases/add-job.use-case.js", () => ({
@@ -19,7 +19,7 @@ jest.unstable_mockModule("../../src/infrastructure/redis/redis-queue.repository.
 }));
 
 const { Queue } = await import("../../src/presentation/queue.js");
-import { Kodiak } from "../../src/presentation/kodiak.js";
+import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 describe("Unit: Queue", () => {
     let mockKodiak: Kodiak;

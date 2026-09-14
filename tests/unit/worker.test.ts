@@ -1,7 +1,7 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
-import type { Kodiak } from "../../src/presentation/kodiak.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
+import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 const mockFetchExecute = jest.fn();
 const mockCompleteExecute = jest.fn();
@@ -34,8 +34,9 @@ jest.unstable_mockModule("../../src/application/use-cases/fail-job.use-case.js",
 
 const { Worker } = await import("../../src/presentation/worker.js");
 const { FetchJobsUseCase } = await import("../../src/application/use-cases/fetch-jobs.use-case.js");
-const { CompleteJobUseCase } =
-    await import("../../src/application/use-cases/complete-job.use-case.js");
+const { CompleteJobUseCase } = await import(
+    "../../src/application/use-cases/complete-job.use-case.js"
+);
 const { FailJobUseCase } = await import("../../src/application/use-cases/fail-job.use-case.js");
 
 describe("Worker", () => {
@@ -185,7 +186,7 @@ describe("Worker", () => {
         const worker = new Worker("test-queue", processor, mockKodiak);
         await worker.start();
 
-        await expect(worker.start()).rejects.toThrow("Worker \"test-queue\" is already running");
+        await expect(worker.start()).rejects.toThrow('Worker "test-queue" is already running');
 
         await worker.stop();
     });
@@ -329,7 +330,9 @@ describe("Worker", () => {
         await jest.advanceTimersByTimeAsync(50);
         await worker.stop();
 
-        expect(errorEmitter).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("Graceful shutdown") }));
+        expect(errorEmitter).toHaveBeenCalledWith(
+            expect.objectContaining({ message: expect.stringContaining("Graceful shutdown") }),
+        );
     });
 
     it("should handle errors during Redis connection disconnect", async () => {

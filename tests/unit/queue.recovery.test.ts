@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mockKodiak: any;
@@ -15,7 +15,7 @@ jest.unstable_mockModule("../../src/infrastructure/redis/redis-queue.repository.
 }));
 
 const { Queue } = await import("../../src/presentation/queue.js");
-import { Kodiak } from "../../src/presentation/kodiak.js";
+import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 describe("Unit: Queue stalled recovery scheduler", () => {
     beforeEach(() => {

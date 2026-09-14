@@ -1,7 +1,7 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
 import IORedis from "ioredis";
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from "@jest/globals";
-import { RedisQueueRepository } from "../../src/infrastructure/redis/redis-queue.repository";
 import type { Job } from "../../src/domain/entities/job.entity";
+import { RedisQueueRepository } from "../../src/infrastructure/redis/redis-queue.repository";
 
 interface TestPayload {
     foo: string;

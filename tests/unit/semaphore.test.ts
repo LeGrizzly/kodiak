@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "@jest/globals";
 import { Semaphore } from "../../src/utils/semaphore";
 
 describe("Unit: Semaphore", () => {

@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach } from "@jest/globals";
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 
@@ -9,8 +9,9 @@ jest.unstable_mockModule("fs", () => ({
     },
 }));
 
-const { RedisQueueRepository } =
-    await import("../../src/infrastructure/redis/redis-queue.repository.js");
+const { RedisQueueRepository } = await import(
+    "../../src/infrastructure/redis/redis-queue.repository.js"
+);
 
 describe("Unit: RedisQueueRepository", () => {
     let repository: InstanceType<typeof RedisQueueRepository>;
