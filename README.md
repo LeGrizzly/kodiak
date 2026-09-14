@@ -66,6 +66,8 @@ graph LR
 ## 🚀 Installation
 
 ```bash
+bun add @legrizzly/kodiak
+# or
 npm install @legrizzly/kodiak
 ```
 
