@@ -1,54 +1,19 @@
 {
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "extends": "./tsconfig.base.json",
     "compilerOptions": {
-        // Basic configuration
-        "incremental": true,
-        "module": "nodenext",
-        "rootDir": "./dist",
-        "sourceMap": false,
-        "declaration": true,
-        "declarationMap": false,
-        "target": "ES2024",
-
-        // Type checking options
-        "strict": true,
-        "noImplicitAny": true,
-        "strictNullChecks": false,
-        "strictFunctionTypes": true,
-        "strictPropertyInitialization": false,
-        "noImplicitReturns": true,
-        "noUncheckedIndexedAccess": true,
-
-        // Code quality options
-        "allowUnreachableCode": true,
-        "allowUnusedLabels": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-
-        // Module resolution
-        "resolveJsonModule": true,
-        "moduleResolution": "nodenext",
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "isolatedModules": true,
-
-        // Library definitions
-        "typeRoots": [
-            "node_modules/@types"
-        ],
-        "lib": [
-            "ES2024"
-        ],
-
-        // Skip unnecessary checks
-        "skipLibCheck": true
+        "noEmit": true,
+        "types": ["node", "jest"]
     },
     "include": [
         "src",
-        "test"
+        "tests",
+        "examples",
+        "benchmark"
     ],
     "exclude": [
         "node_modules",
         "dist",
-        "jest.config.cjs"
+        "coverage"
     ]
 }
