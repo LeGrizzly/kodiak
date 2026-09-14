@@ -1,17 +1,19 @@
--- KEYS[1] = active zset
--- KEYS[2] = job hash key
--- ARGV[1] = jobId
--- ARGV[2] = new lock expiration timestamp (number)
--- ARGV[3] = ownerToken (optional, pass empty string if not used)
+-- Script to atomically extend lock lease on an active job
+-- KEYS[1] = Active Queue ZSet ({prefix:queue}:active)
+-- KEYS[2] = Job Data Hash ({prefix:queue}:jobs:{jobId})
 
-local active = KEYS[1]
+-- ARGV[1] = Job ID
+-- ARGV[2] = New lock expiration timestamp (ms)
+-- ARGV[3] = Owner Token (workerId:slot)
+
+local activeQueue = KEYS[1]
 local jobKey = KEYS[2]
 local jobId = ARGV[1]
 local newExpiry = tonumber(ARGV[2])
 local ownerToken = ARGV[3]
 
 -- Check if job is present in active set
-local score = redis.call('ZSCORE', active, jobId)
+local score = redis.call('ZSCORE', activeQueue, jobId)
 if not score then
     return 0
 end
@@ -24,5 +26,5 @@ if ownerToken and ownerToken ~= '' then
     end
 end
 
-redis.call('ZADD', active, newExpiry, jobId)
+redis.call('ZADD', activeQueue, newExpiry, jobId)
 return 1

@@ -8,28 +8,32 @@ export class FailJobUseCase<T> {
         private readonly backoffStrategies: Record<string, BackoffStrategy> = {},
     ) {}
 
-    async execute(job: Job<T>, error: Error): Promise<void> {
-        let nextAttempt: Date | undefined;
+    public async execute(job: Job<T>, error: Error, ownerToken?: string): Promise<void> {
+        const nextAttempt = this.computeNextAttempt(job);
+        await this.queueRepository.markAsFailed(
+            job.id,
+            error.message,
+            new Date(),
+            nextAttempt,
+            ownerToken,
+            error.stack,
+        );
+    }
 
-        if (job.backoff) {
-            const { type, delay } = job.backoff;
-            const attemptsMade = job.retryCount + 1;
+    private computeNextAttempt(job: Job<T>): Date | undefined {
+        if (!job.backoff) return undefined;
 
-            let backoffDelay: number | null = null;
+        const { type, delay } = job.backoff;
+        const attemptsMade = job.retryCount + 1;
+        const strategyDelay = this.resolveBackoffDelay(type, delay, attemptsMade);
 
-            if (type === "fixed") {
-                backoffDelay = delay;
-            } else if (type === "exponential") {
-                backoffDelay = delay * Math.pow(2, attemptsMade - 1);
-            } else if (this.backoffStrategies[type]) {
-                backoffDelay = this.backoffStrategies[type](attemptsMade, delay);
-            }
+        return strategyDelay !== null ? new Date(Date.now() + strategyDelay) : undefined;
+    }
 
-            if (backoffDelay !== null) {
-                nextAttempt = new Date(Date.now() + backoffDelay);
-            }
-        }
-
-        await this.queueRepository.markAsFailed(job.id, error.message, new Date(), nextAttempt);
+    private resolveBackoffDelay(type: string, delay: number, attemptsMade: number): number | null {
+        if (type === "fixed") return delay;
+        if (type === "exponential") return delay * Math.pow(2, attemptsMade - 1);
+        const customStrategy = this.backoffStrategies[type];
+        return customStrategy ? customStrategy(attemptsMade, delay) : null;
     }
 }

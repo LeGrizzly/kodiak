@@ -1,38 +1,88 @@
+import { randomUUID } from "node:crypto";
 import type { Redis, RedisOptions } from "ioredis";
+import type { JobOptions } from "../application/dtos/job-options.dto.js";
 import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
 import type { Job } from "../domain/entities/job.entity.js";
-import { RedisClient } from "../infrastructure/redis/redis-client.js";
+import type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
+import { DragonflyConnection } from "../infrastructure/dragonfly/dragonfly-connection.js";
+import type { PipeliningOptions } from "../infrastructure/dragonfly/dragonfly-queue.repository.js";
+import { MsgpackJobSerializer } from "../infrastructure/serializers/msgpack-job.serializer.js";
 import { Queue } from "./queue.js";
-import { Worker } from "./worker.js";
+import type { TaskDefinition } from "./task.js";
+import { Worker, type WorkerProcessor } from "./worker.js";
 
 export interface KodiakOptions {
     connection: RedisOptions;
     prefix?: string;
+    pipelining?: PipeliningOptions;
+    serializer?: IJobSerializer;
 }
 
 export class Kodiak {
+    private readonly dragonflyConnection: DragonflyConnection;
     public readonly connection: Redis;
     public readonly prefix: string;
+    public readonly pipelining?: PipeliningOptions;
+    public readonly serializer: IJobSerializer;
 
     constructor(private options: KodiakOptions) {
-        RedisClient.init(this.options.connection);
-        this.connection = RedisClient.getClient();
+        this.dragonflyConnection = new DragonflyConnection(this.options.connection);
+        this.connection = this.dragonflyConnection.getRawClient();
         this.prefix = this.options.prefix ?? "kodiak";
+        this.pipelining = this.options.pipelining;
+        this.serializer = this.options.serializer ?? new MsgpackJobSerializer();
     }
 
-    public createQueue<T>(name: string): Queue<T> {
-        return new Queue<T>(name, this);
+    public createQueue<T>(
+        name: string,
+        options?: { serializer?: IJobSerializer; pipelining?: PipeliningOptions },
+    ): Queue<T> {
+        return new Queue<T>(
+            name,
+            this,
+            undefined,
+            options?.serializer ?? this.serializer,
+            options?.pipelining ?? this.pipelining,
+        );
     }
 
     public createWorker<T>(
         name: string,
-        processor: (job: Job<T>) => Promise<void>,
+        processor: WorkerProcessor<T>,
         opts?: WorkerOptions,
     ): Worker<T> {
         return new Worker<T>(name, processor, this, opts);
     }
 
+    public async push<T>(
+        taskDef: TaskDefinition<T>,
+        data: T,
+        options?: JobOptions,
+    ): Promise<Job<T>> {
+        const queue = this.createQueue<T>(taskDef.name);
+        const resolvedData =
+            typeof taskDef.schema === "function"
+                ? taskDef.schema(data)
+                : taskDef.schema && typeof taskDef.schema.parse === "function"
+                  ? taskDef.schema.parse(data)
+                  : data;
+
+        const mergedOptions: JobOptions = { ...taskDef.options, ...options };
+        return queue.add(randomUUID(), resolvedData, mergedOptions);
+    }
+
+    public worker<T>(
+        taskDef: TaskDefinition<T>,
+        processor: WorkerProcessor<T>,
+        opts?: WorkerOptions,
+    ): Worker<T> {
+        const mergedOpts: WorkerOptions = {
+            ...opts,
+        };
+        return this.createWorker<T>(taskDef.name, processor, mergedOpts);
+    }
+
     public async close(): Promise<void> {
-        await RedisClient.quit();
+        await this.dragonflyConnection.quit();
     }
 }

@@ -5,30 +5,31 @@ import type { JobOptions } from "../dtos/job-options.dto.js";
 export class AddJobUseCase<T> {
     constructor(private readonly queueRepository: IQueueRepository<T>) {}
 
-    async execute(id: string, data: T, options?: JobOptions): Promise<Job<T>> {
+    public async execute(id: string, data: T, options?: JobOptions): Promise<Job<T>> {
         const priority = options?.priority ?? 10;
         const delay =
             options?.delay ?? (options?.waitUntil ? options.waitUntil.getTime() - Date.now() : 0);
+        const isDelayed = delay > 0;
 
         const job: Job<T> = {
             id,
             data,
-            status: delay > 0 ? "delayed" : "waiting",
+            status: isDelayed ? "delayed" : "waiting",
             priority,
             addedAt: new Date(),
             retryCount: 0,
             maxAttempts: options?.attempts ?? 1,
             backoff: options?.backoff,
+            repeat: options?.repeat ? { ...options.repeat, count: 0 } : undefined,
+            traceparent: options?.traceparent,
             progress: 0,
-            updateProgress: async () => {
-                return Promise.resolve();
+            updateProgress: async (progress: number) => {
+                await this.queueRepository.updateProgress(id, progress);
             },
         };
 
-        const now = Date.now();
-        const score = priority * 10000000000000 + (now + delay);
-
-        await this.queueRepository.add(job, score, delay > 0);
+        const score = priority * 10000000000000 + (Date.now() + Math.max(0, delay));
+        await this.queueRepository.add(job, score, isDelayed);
         return job;
     }
 }
