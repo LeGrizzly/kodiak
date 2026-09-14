@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
 import type { Job, JobStatus } from "../../domain/entities/job.entity.js";
 import type { IQueueRepository } from "../../domain/repositories/queue.repository.js";
 
@@ -173,7 +173,11 @@ export class RedisQueueRepository<T> implements IQueueRepository<T> {
         return null;
     }
 
-    async fetchNextJobs(count: number, lockDuration: number, ownerToken?: string): Promise<Job<T>[]> {
+    async fetchNextJobs(
+        count: number,
+        lockDuration: number,
+        ownerToken?: string,
+    ): Promise<Job<T>[]> {
         const now = Date.now();
         const lockExpiresAt = now + lockDuration;
 
@@ -193,12 +197,20 @@ export class RedisQueueRepository<T> implements IQueueRepository<T> {
         const pipeline = this.connection.pipeline();
         for (const jobId of jobIds) {
             const jobKey = `${this.jobKeyPrefix}${jobId}`;
-                if (ownerToken) {
-                    pipeline.hset(jobKey, "state", "active", "started_at", now, "lock_owner", ownerToken);
-                } else {
-                    pipeline.hset(jobKey, "state", "active", "started_at", now);
-                }
-                pipeline.hgetall(jobKey);
+            if (ownerToken) {
+                pipeline.hset(
+                    jobKey,
+                    "state",
+                    "active",
+                    "started_at",
+                    now,
+                    "lock_owner",
+                    ownerToken,
+                );
+            } else {
+                pipeline.hset(jobKey, "state", "active", "started_at", now);
+            }
+            pipeline.hgetall(jobKey);
         }
         const results = await pipeline.exec();
 
@@ -273,8 +285,7 @@ export class RedisQueueRepository<T> implements IQueueRepository<T> {
 
             if (!results) return null;
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const [err, data] = results[1] as [Error | null, any];
+            const [err, data] = results[1] as [Error | null, Record<string, string>];
 
             if (err || !data) return null;
             jobData = data;
@@ -320,7 +331,7 @@ export class RedisQueueRepository<T> implements IQueueRepository<T> {
         );
     }
 
-    async promoteDelayedJobs(limit: number = 50): Promise<number> {
+    async promoteDelayedJobs(limit = 50): Promise<number> {
         const now = Date.now();
         const result = await this.connection.eval(
             this.promoteDelayedJobsScript,

@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
-import { Redis } from "ioredis";
-import { Kodiak } from "./kodiak.js";
-import { AddJobUseCase } from "../application/use-cases/add-job.use-case.js";
-import { RedisQueueRepository } from "../infrastructure/redis/redis-queue.repository.js";
-import type { Job } from "../domain/entities/job.entity.js";
+import type { Redis } from "ioredis";
 import type { JobOptions } from "../application/dtos/job-options.dto.js";
+import { AddJobUseCase } from "../application/use-cases/add-job.use-case.js";
+import type { Job } from "../domain/entities/job.entity.js";
+import { RedisQueueRepository } from "../infrastructure/redis/redis-queue.repository.js";
+import type { Kodiak } from "./kodiak.js";
 
 export class Queue<T> extends EventEmitter {
     private readonly addJobUseCase: AddJobUseCase<T>;
@@ -49,7 +49,8 @@ export class Queue<T> extends EventEmitter {
             try {
                 const recovered = await this.queueRepository.recoverStalledJobs();
                 if (recovered && Array.isArray(recovered) && recovered.length > 0) {
-                    this.emit("info",
+                    this.emit(
+                        "info",
                         `[Queue:${this.name}] Recovered ${recovered.length} stalled job(s): ${recovered.join(", ")}`,
                     );
                 }

@@ -27,7 +27,7 @@ export interface BackoffOptions {
 export interface RepeatOptions {
     /**
      * Interval in milliseconds between repeats.
-     * 
+     *
      * Examples:
      * - 60000 (repeat every 60 seconds)
      * - 300000 (repeat every 5 minutes)
@@ -35,7 +35,7 @@ export interface RepeatOptions {
     every: number;
     /**
      * Optional limit of repetitions.
-     * 
+     *
      * Examples:
      * - 5 (repeat up to 5 times)
      * - 10 (repeat up to 10 times)
@@ -86,7 +86,7 @@ export interface RepeatOptions {
 export interface JobOptions {
     /**
      * Job priority (higher number = higher priority).
-     * 
+     *
      * Examples:
      * - 0 (low priority)
      * - 1 (normal priority)
@@ -102,7 +102,7 @@ export interface JobOptions {
 
     /**
      * Delay in milliseconds before the job becomes available.
-     * 
+     *
      * Examples:
      * - 0 (no delay)
      * - 5000 (5 seconds delay)
@@ -117,7 +117,7 @@ export interface JobOptions {
 
     /**
      * Exact Date until which the job should wait before being processed.
-     * 
+     *
      * Examples:
      * - new Date(Date.now() + 10000) (wait 10 seconds)
      * - new Date(Date.now() + 60000) (wait 1 minute)
@@ -132,7 +132,7 @@ export interface JobOptions {
 
     /**
      * Number of attempts before giving up.
-     * 
+     *
      * Examples:
      * - 1 (single attempt)
      * - 3 (default retry behavior)
@@ -160,7 +160,7 @@ export interface JobOptions {
 
     /**
      * Repeat configuration for recurring jobs.
-     * 
+     *
      * Optional.
      *
      * Usage:

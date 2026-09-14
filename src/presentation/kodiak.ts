@@ -1,9 +1,9 @@
-import { type Redis, type RedisOptions } from "ioredis";
+import type { Redis, RedisOptions } from "ioredis";
+import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
+import type { Job } from "../domain/entities/job.entity.js";
 import { RedisClient } from "../infrastructure/redis/redis-client.js";
 import { Queue } from "./queue.js";
 import { Worker } from "./worker.js";
-import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
-import type { Job } from "../domain/entities/job.entity.js";
 
 export interface KodiakOptions {
     connection: RedisOptions;

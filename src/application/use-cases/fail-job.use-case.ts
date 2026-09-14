@@ -1,5 +1,5 @@
-import type { IQueueRepository } from "../../domain/repositories/queue.repository.js";
 import type { Job } from "../../domain/entities/job.entity.js";
+import type { IQueueRepository } from "../../domain/repositories/queue.repository.js";
 import type { BackoffStrategy } from "../../domain/strategies/backoff.strategy.js";
 
 export class FailJobUseCase<T> {

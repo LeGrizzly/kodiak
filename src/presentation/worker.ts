@@ -1,16 +1,16 @@
-import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { setTimeout } from "node:timers/promises";
-import { Redis } from "ioredis";
-import { Kodiak } from "./kodiak.js";
+import type { Redis } from "ioredis";
+import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
 import { CompleteJobUseCase } from "../application/use-cases/complete-job.use-case.js";
 import { FailJobUseCase } from "../application/use-cases/fail-job.use-case.js";
+import { FetchJobsUseCase } from "../application/use-cases/fetch-jobs.use-case.js";
 import { UpdateJobProgressUseCase } from "../application/use-cases/update-job-progress.use-case.js";
+import type { Job } from "../domain/entities/job.entity.js";
 import { RedisQueueRepository } from "../infrastructure/redis/redis-queue.repository.js";
 import { Semaphore } from "../utils/semaphore.js";
-import { FetchJobsUseCase } from "../application/use-cases/fetch-jobs.use-case.js";
-import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
-import type { Job } from "../domain/entities/job.entity.js";
+import type { Kodiak } from "./kodiak.js";
 
 export class Worker<T> extends EventEmitter {
     private readonly fetchJobsUseCase: FetchJobsUseCase<T>;
@@ -163,7 +163,8 @@ export class Worker<T> extends EventEmitter {
                         const heartbeatEnabled = this.opts?.heartbeatEnabled ?? false;
                         if (heartbeatEnabled) {
                             const heartbeatInterval =
-                                this.opts?.heartbeatInterval ?? Math.max(1000, Math.floor(lockDuration / 2));
+                                this.opts?.heartbeatInterval ??
+                                Math.max(1000, Math.floor(lockDuration / 2));
                             heartbeatTimer = setInterval(async () => {
                                 try {
                                     await this.ackQueueRepository.extendLock(
