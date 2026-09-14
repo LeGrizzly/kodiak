@@ -1,5 +1,5 @@
 {
-    "name": "@xalsie/kodiak",
+    "name": "@LeGrizzly/kodiak",
     "version": "1.1.0",
     "description": "Kodiak: The heavy-duty job queue that mauls latency. Native TypeScript & Lua.",
     "publishConfig": {
@@ -11,13 +11,13 @@
         "Lightweight",
         "DragonflyDB"
     ],
-    "homepage": "https://github.com/xalsie/kodiak#readme",
+    "homepage": "https://github.com/LeGrizzly/kodiak#readme",
     "bugs": {
-        "url": "https://github.com/xalsie/kodiak/issues"
+        "url": "https://github.com/LeGrizzly/kodiak/issues"
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/xalsie/kodiak.git"
+        "url": "git+https://github.com/LeGrizzly/kodiak.git"
     },
     "license": "ISC",
     "author": "LeGrizzly",
@@ -28,32 +28,31 @@
         "dist",
         "README.md"
     ],
+    "packageManager": "bun@1.4.2",
     "scripts": {
-        "build": "tsc && node -e \"const fs = require('fs'); fs.cpSync('src/infrastructure/redis/lua', 'dist/infrastructure/redis/lua', {recursive: true});\"",        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-        "coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
-        "example": "tsc --esModuleInterop --allowSyntheticDefaultImports --module node20 --lib es2024 --moduleResolution node16 examples/simple.ts && node examples/simple.js",
-        "lint": "eslint . --ext .ts",
-        "lint:fix": "eslint . --ext .ts --fix",
-        "lint:format": "prettier --write ."
+        "build": "tsc && bun -e \"const fs = require('fs'); fs.cpSync('src/infrastructure/redis/lua', 'dist/infrastructure/redis/lua', {recursive: true});\"",
+        "test": "bun node_modules/jest/bin/jest.js",
+        "coverage": "bun --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+        "example": "tsc --esModuleInterop --allowSyntheticDefaultImports --module node20 --lib es2024 --moduleResolution node16 examples/simple.ts && bun examples/simple.js",
+        "lint": "biome lint src tests examples",
+        "lint:fix": "biome lint --write src tests examples",
+        "lint:format": "biome format --write src tests examples",
+        "format": "biome format --write src tests examples",
+        "check": "biome check src tests examples",
+        "check:fix": "biome check --write src tests examples"
     },
     "dependencies": {
-        "ioredis": "^5.9.2"
+        "ioredis": "^6.0.0"
     },
     "devDependencies": {
-        "@semantic-release/changelog": "^6.0.3",
-        "@semantic-release/git": "^10.0.1",
+        "@biomejs/biome": "^2.5.13",
+        "@semantic-release/changelog": "^7.0.0",
+        "@semantic-release/git": "^11.0.1",
         "@types/jest": "^30.0.0",
-        "@types/node": "^25.0.10",
-        "@typescript-eslint/eslint-plugin": "^8.53.1",
-        "@typescript-eslint/parser": "^8.53.1",
-        "eslint": "^9.39.2",
-        "eslint-config-prettier": "^10.1.8",
-        "eslint-plugin-prettier": "^5.5.5",
-        "jest": "^30.2.0",
-        "prettier": "^3.8.1",
-        "semantic-release": "^25.0.2",
-        "ts-jest": "^29.4.6",
-        "typescript": "^5.9.3",
-        "typescript-eslint": "^8.53.1"
+        "@types/node": "^26.5.1",
+        "jest": "^30.5.1",
+        "semantic-release": "^25.0.9",
+        "ts-jest": "^29.4.12",
+        "typescript": "6"
     }
 }
