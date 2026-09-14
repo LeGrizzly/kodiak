@@ -1,5 +1,5 @@
-import type { Job } from "../dist/domain/entities/job.entity.js";
-import { Kodiak } from "../dist/presentation/kodiak.js";
+import type { Job } from "../src/domain/entities/job.entity.js";
+import { Kodiak } from "../src/presentation/kodiak.js";
 
 // 1. Initialiser Kodiak
 const kodiak = new Kodiak({
@@ -26,13 +26,13 @@ const worker = kodiak.createWorker<EmailPayload>(
         console.log(`📨 Envoi de l'email à ${job.data.to}...`);
 
         await new Promise((resolve) => setTimeout(resolve, 500));
-        await job.updateProgress(50);
+        await job.updateProgress?.(50);
 
         // Simuler une erreur pour démonstration
         if (job.id === "welcome-2") throw new Error("Simulated email sending failure");
 
         await new Promise((resolve) => setTimeout(resolve, 500));
-        await job.updateProgress(100);
+        await job.updateProgress?.(100);
 
         console.log(`✅ Email envoyé : "${job.data.subject}"`);
     },
