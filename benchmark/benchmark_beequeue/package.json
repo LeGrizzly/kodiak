@@ -1,0 +1,17 @@
+{
+    "name": "benchmark_beequeue",
+    "version": "1.0.0",
+    "description": "Benchmark using bee-queue against Redis",
+    "main": "benchmark.js",
+    "scripts": {
+        "bench": "node benchmark.js",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "dependencies": {
+        "bee-queue": "^2.0.0"
+    }
+}
