@@ -1,5 +1,5 @@
-import { Kodiak } from "../dist/presentation/kodiak.js";
 import type { Job } from "../dist/domain/entities/job.entity.js";
+import { Kodiak } from "../dist/presentation/kodiak.js";
 
 // 1. Initialiser Kodiak
 const kodiak = new Kodiak({
@@ -38,7 +38,7 @@ const worker = kodiak.createWorker<EmailPayload>(
     },
     {
         concurrency: 1,
-        prefetch: 2
+        prefetch: 2,
     },
 );
 
