@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import {
     KODIAK_FRAME_MAGIC,
     KODIAK_HEADER_SIZE,
@@ -49,10 +49,7 @@ describe("KodiakFrameCodec", () => {
         const messageId = "00000000-0000-0000-0000-000000000001";
 
         const encoded = codec.encode({
-            magic: KODIAK_FRAME_MAGIC,
             command: KodiakOpCode.ACK,
-            flags: 0,
-            priority: 0,
             messageId,
             headersLength: 0,
             payloadLength: payload.length,
@@ -101,5 +98,107 @@ describe("KodiakFrameCodec", () => {
 
         // Verify that payload buffer shares memory with the encoded buffer
         expect(decoded.payload.buffer).toBe(encoded.buffer);
+    });
+
+    it("should encode with headersRaw when headers object is omitted", () => {
+        const raw = new TextEncoder().encode('{"raw":true}');
+        const encoded = codec.encode({
+            magic: KODIAK_FRAME_MAGIC,
+            flags: 0,
+            priority: 0,
+            command: KodiakOpCode.JOB,
+            messageId: "11111111-2222-3333-4444-555555555555",
+            headersLength: raw.length,
+            payloadLength: 0,
+            headersRaw: raw,
+            payload: new Uint8Array(0),
+        });
+
+        const decoded = codec.decode(encoded);
+        expect(decoded).not.toBeNull();
+        expect(decoded?.headers).toEqual({ raw: true });
+    });
+
+    it("should return null when frame buffer contains complete header but truncated payload", () => {
+        const payload = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+        const encoded = codec.encode({
+            magic: KODIAK_FRAME_MAGIC,
+            flags: 0,
+            priority: 0,
+            command: KodiakOpCode.PUSH,
+            messageId: "00000000-0000-0000-0000-000000000001",
+            headersLength: 0,
+            payloadLength: payload.length,
+            payload,
+        });
+
+        // Slice to truncate payload but leave header intact
+        const truncated = encoded.subarray(0, KODIAK_HEADER_SIZE + 2);
+        expect(codec.decode(truncated)).toBeNull();
+    });
+
+    it("should encode and decode non-UUID message IDs with UTF-8 fallback", () => {
+        const customId = "short-id";
+        const encoded = codec.encode({
+            magic: KODIAK_FRAME_MAGIC,
+            flags: 0,
+            priority: 0,
+            command: KodiakOpCode.ACK,
+            messageId: customId,
+            headersLength: 0,
+            payloadLength: 0,
+            payload: new Uint8Array(0),
+        });
+
+        const decoded = codec.decode(encoded);
+        expect(decoded).not.toBeNull();
+        expect(decoded?.messageId).toBe(customId);
+    });
+
+    it("should decode all-zeroes messageId as all-zeroes UUID string", () => {
+        const buffer = new Uint8Array(KODIAK_HEADER_SIZE);
+        buffer[0] = KODIAK_FRAME_MAGIC;
+        buffer[1] = KodiakOpCode.ACK;
+
+        const decoded = codec.decode(buffer);
+        expect(decoded).not.toBeNull();
+        expect(decoded?.messageId).toBe("00000000-0000-0000-0000-000000000000");
+    });
+
+    it("should keep raw headers when headers are not valid JSON", () => {
+        const malformedRaw = new Uint8Array([0x7b, 0x22, 0x61, 0x3a]); // '{ "a:' (invalid JSON)
+        const encoded = codec.encode({
+            magic: KODIAK_FRAME_MAGIC,
+            flags: 0,
+            priority: 0,
+            command: KodiakOpCode.PUSH,
+            messageId: "11111111-2222-3333-4444-555555555555",
+            headersLength: malformedRaw.length,
+            payloadLength: 0,
+            headersRaw: malformedRaw,
+            payload: new Uint8Array(0),
+        });
+
+        const decoded = codec.decode(encoded);
+        expect(decoded).not.toBeNull();
+        expect(decoded?.headers).toBeUndefined();
+        expect(decoded?.headersRaw).toEqual(malformedRaw);
+    });
+
+    it("should fallback to hex string if decoding non-UUID message ID throws", () => {
+        const buffer = new Uint8Array(KODIAK_HEADER_SIZE);
+        buffer[0] = KODIAK_FRAME_MAGIC;
+        buffer[1] = KodiakOpCode.ACK;
+        buffer[4] = 0x41; // 'A'
+        buffer[5] = 0x00; // trailing null
+
+        const decodeSpy = jest.spyOn(TextDecoder.prototype, "decode").mockImplementationOnce(() => {
+            throw new Error("TextDecoder failed");
+        });
+
+        const decoded = codec.decode(buffer);
+        expect(decoded).not.toBeNull();
+        expect(typeof decoded?.messageId).toBe("string");
+        decodeSpy.mockRestore();
     });
 });

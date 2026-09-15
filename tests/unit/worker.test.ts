@@ -8,13 +8,17 @@ const mockCompleteExecute = jest.fn();
 const mockCompleteManyExecute = jest.fn();
 const mockFailExecute = jest.fn();
 
+const mockExtendLock = jest.fn().mockResolvedValue(true as never);
+const mockReleaseJobs = jest.fn().mockResolvedValue(undefined as never);
+
 jest.unstable_mockModule(
     "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
     () => ({
         DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
-            updateProgress: jest.fn(),
+            updateProgress: jest.fn().mockResolvedValue(undefined as never),
             fetchNextJobs: jest.fn(),
-            releaseJobs: jest.fn().mockResolvedValue(undefined as never),
+            releaseJobs: mockReleaseJobs,
+            extendLock: mockExtendLock,
         })),
     }),
 );
@@ -79,8 +83,13 @@ describe("Worker", () => {
         mockCompleteManyExecute.mockResolvedValue(undefined as never);
 
         mockFailExecute.mockReset();
-
         mockFailExecute.mockResolvedValue(undefined as never);
+
+        mockExtendLock.mockReset();
+        mockExtendLock.mockResolvedValue(true as never);
+
+        mockReleaseJobs.mockReset();
+        mockReleaseJobs.mockResolvedValue(undefined as never);
     });
 
     const createMockJob = (overrides: Partial<Job<unknown>> = {}): Job<unknown> => ({
@@ -506,5 +515,266 @@ describe("Worker", () => {
         expect(completedEmitter).toHaveBeenCalledWith(mockJob);
 
         await worker.stop();
+    });
+
+    it("should expose activeCount and getTelemetry getters", () => {
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        expect(worker.activeCount).toBe(0);
+        const telemetry = worker.getTelemetry();
+        expect(telemetry).toEqual({
+            fetchCount: 0,
+            fetchDurationMs: 0,
+            processCount: 0,
+            processDurationMs: 0,
+            ackCount: 0,
+            ackDurationMs: 0,
+            idleDurationMs: 0,
+        });
+    });
+
+    it("should track telemetry metrics across fetch, process, idle, and ack with and without pipelining", async () => {
+        const worker = new Worker<{ id: string }>("test-queue", processor, mockKodiak, {
+            telemetry: true,
+            ackPipelining: false,
+        });
+
+        const mockJob = createMockJob({ id: "telemetry-job-1" });
+        mockFetchExecute
+            .mockResolvedValueOnce([mockJob] as never)
+            .mockResolvedValueOnce([] as never);
+
+        processor.mockResolvedValue(undefined);
+
+        await worker.start();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await worker.stop();
+
+        const t = worker.getTelemetry();
+        expect(t.fetchCount).toBeGreaterThanOrEqual(1);
+        expect(t.processCount).toBe(1);
+        expect(t.ackCount).toBe(1);
+        expect(t.idleDurationMs).toBeGreaterThan(0);
+
+        // Also test ackBuffer telemetry (onBatchFlushed)
+        const pipelinedWorker = new Worker<{ id: string }>("test-queue", processor, mockKodiak, {
+            telemetry: true,
+            ackPipelining: { maxBatch: 1, maxWaitMs: 0 },
+        });
+
+        mockFetchExecute
+            .mockResolvedValueOnce([mockJob] as never)
+            .mockResolvedValueOnce([] as never);
+
+        await pipelinedWorker.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await pipelinedWorker.stop();
+
+        const pt = pipelinedWorker.getTelemetry();
+        expect(pt.ackCount).toBe(1);
+    });
+
+    it("should execute bound heartbeat and updateProgress callbacks from contextPool and emit progress", async () => {
+        let capturedHeartbeatResult = false;
+        processor.mockImplementation(async (job: unknown) => {
+            const ctx = job as {
+                heartbeat?: () => Promise<boolean>;
+                updateProgress?: (n: number) => Promise<void>;
+            };
+            if (ctx.heartbeat) {
+                capturedHeartbeatResult = await ctx.heartbeat();
+            }
+            if (ctx.updateProgress) {
+                await ctx.updateProgress(75);
+            }
+        });
+
+        const progressEmitter = jest.fn();
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        worker.on("progress", progressEmitter);
+
+        const mockJob = createMockJob({ id: "heartbeat-job-1" });
+        mockFetchExecute
+            .mockResolvedValueOnce([mockJob] as never)
+            .mockResolvedValueOnce([] as never);
+
+        await worker.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await worker.stop();
+
+        expect(capturedHeartbeatResult).toBe(true);
+        expect(mockExtendLock).toHaveBeenCalledWith(
+            "heartbeat-job-1",
+            expect.any(Number),
+            expect.any(String),
+        );
+        expect(progressEmitter).toHaveBeenCalledWith(
+            expect.objectContaining({ id: "heartbeat-job-1" }),
+            75,
+        );
+    });
+
+    it("should forward ackBuffer onError to worker error event", async () => {
+        const errorEmitter = jest.fn();
+        const ackError = new Error("Pipelined ack failed");
+        mockCompleteManyExecute.mockRejectedValueOnce(ackError as never);
+
+        const worker = new Worker("test-queue", processor, mockKodiak, {
+            ackPipelining: { maxBatch: 1, maxWaitMs: 0 },
+        });
+        worker.on("error", errorEmitter);
+
+        const mockJob = createMockJob({ id: "err-job-1" });
+        mockFetchExecute
+            .mockResolvedValueOnce([mockJob] as never)
+            .mockResolvedValueOnce([] as never);
+
+        processor.mockResolvedValue(undefined);
+
+        await worker.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await worker.stop();
+
+        expect(errorEmitter).toHaveBeenCalledWith(ackError);
+    });
+
+    it("should return null in getJob when prefetch sizing gives 0 granted credits", async () => {
+        const worker = new Worker("test-queue", processor, mockKodiak, {
+            prefetch: { min: 0, max: 0 },
+        });
+
+        const workerInternal = worker as unknown as {
+            getJob: (slot: number, ownerToken: string) => Promise<Job<unknown> | null>;
+        };
+
+        const job = await workerInternal.getJob(0, "tok");
+        expect(job).toBeNull();
+    });
+
+    it("should emit error if releaseJobs fails during stop with unconsumed jobs", async () => {
+        const errorEmitter = jest.fn();
+        mockReleaseJobs.mockRejectedValueOnce(new Error("Release unconsumed failed") as never);
+
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        worker.on("error", errorEmitter);
+
+        worker.jobBuffers.set(0, [createMockJob({ id: "unconsumed-job" })]);
+
+        await worker.stop();
+
+        expect(errorEmitter).toHaveBeenCalledWith(
+            expect.objectContaining({ message: "Release unconsumed failed" }),
+        );
+    });
+
+    it("should emit error if disconnectSafe catches an error", () => {
+        const errorEmitter = jest.fn();
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        worker.on("error", errorEmitter);
+
+        const workerInternal = worker as unknown as {
+            disconnectSafe: (conn: { disconnect: () => void }) => void;
+        };
+
+        workerInternal.disconnectSafe({
+            disconnect: () => {
+                throw new Error("Disconnect broken");
+            },
+        });
+
+        expect(errorEmitter).toHaveBeenCalledWith(
+            expect.objectContaining({ message: "Disconnect broken" }),
+        );
+    });
+
+    it("should emit error when processSlotLoop encounters an Error in main loop", async () => {
+        const errorEmitter = jest.fn();
+        mockFetchExecute.mockRejectedValueOnce(new Error("Fetch failed in loop") as never);
+
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        worker.on("error", errorEmitter);
+
+        await worker.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        await worker.stop();
+
+        expect(errorEmitter).toHaveBeenCalledWith(
+            expect.objectContaining({ message: "Fetch failed in loop" }),
+        );
+    });
+
+    it("should accept credits as number, credits as object, and ackPipelining as boolean true", async () => {
+        // 1. credits as number
+        const workerNumCredits = new Worker("test-queue", processor, mockKodiak, {
+            credits: 50,
+        });
+        expect(workerNumCredits).toBeDefined();
+
+        // 2. credits as object, ackPipelining as true (boolean)
+        const workerObjCredits = new Worker("test-queue", processor, mockKodiak, {
+            credits: { maxCredits: 40, replenishBatchThreshold: 5 },
+            ackPipelining: true,
+        });
+        expect(workerObjCredits).toBeDefined();
+    });
+
+    it("should handle falsy jobs and undefined elements in getJob", async () => {
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        const workerInternal = worker as unknown as {
+            getJob: (slot: number, ownerToken: string) => Promise<Job<unknown> | null>;
+        };
+
+        // 1. mockFetchExecute returning null (falsy jobs -> fetchedCount = 0)
+        (
+            mockFetchExecute as jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>
+        ).mockResolvedValueOnce(null);
+        const resNull = await workerInternal.getJob(0, "tok");
+        expect(resNull).toBeNull();
+
+        // 2. mockFetchExecute returning [undefined] (triggers return job ?? null)
+        (
+            mockFetchExecute as jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>
+        ).mockResolvedValueOnce([undefined]);
+        const resUndef = await workerInternal.getJob(0, "tok");
+        expect(resUndef).toBeNull();
+    });
+
+    it("should handle undefined elements during releaseUnconsumedJobs and non-Error in stop", async () => {
+        const errorEmitter = jest.fn();
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        worker.on("error", errorEmitter);
+
+        // slot buffer containing undefined item
+        worker.jobBuffers.set(0, [
+            undefined as unknown as Job<unknown>,
+            createMockJob({ id: "valid-unconsumed" }),
+        ]);
+
+        // Push a rejected promise with a raw string (non-Error) into processingPromises to trigger line 190
+        const workerInternal = worker as unknown as {
+            processingPromises: Promise<void>[];
+        };
+        workerInternal.processingPromises.push(Promise.reject("raw rejection in stop"));
+
+        await worker.stop();
+
+        expect(errorEmitter).toHaveBeenCalledWith("raw rejection in stop");
+    });
+
+    it("should suppress AbortError during graceful shutdown stop()", async () => {
+        const errorEmitter = jest.fn();
+        const worker = new Worker("test-queue", processor, mockKodiak);
+        worker.on("error", errorEmitter);
+
+        const abortError = new Error("aborted operation");
+        abortError.name = "AbortError";
+
+        const workerInternal = worker as unknown as {
+            processingPromises: Promise<void>[];
+        };
+        workerInternal.processingPromises.push(Promise.reject(abortError));
+
+        await worker.stop();
+
+        expect(errorEmitter).not.toHaveBeenCalled();
     });
 });

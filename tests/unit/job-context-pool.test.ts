@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from "@jest/globals";
-import { JobContextPool } from "../../src/application/dtos/job-context-pool.js";
+import { JobContextPool, PooledJobContext } from "../../src/application/dtos/job-context-pool.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 
 describe("JobContextPool", () => {
@@ -94,5 +94,98 @@ describe("JobContextPool", () => {
 
         expect(mockHeartbeat).toHaveBeenCalledWith(job.id, "token-exec");
         expect(mockUpdateProgress).toHaveBeenCalledWith(job.id, 50);
+        expect(job.progress).toBe(50);
+    });
+
+    it("should return false when heartbeat is invoked without heartbeatFn", async () => {
+        const pool = new JobContextPool<string>("no-fn-queue");
+        const job: Job<string> = {
+            id: "j-no-fn",
+            data: "no-fn",
+            priority: 1,
+            status: "active",
+            retryCount: 0,
+            maxAttempts: 1,
+            addedAt: new Date(),
+        };
+
+        const ctx = pool.acquire(job);
+        const result = await ctx.heartbeat?.();
+        expect(result).toBe(false);
+
+        // Test updateProgress when updateProgressFn is not provided
+        await ctx.updateProgress?.(100);
+        expect(job.progress).toBeUndefined();
+
+        // Test updateProgress when updateProgressFn is provided but job is undefined on raw context
+        const rawCtx = new PooledJobContext<string>("raw-queue", undefined, async () => {});
+        await rawCtx.updateProgress(50);
+        expect(rawCtx.job).toBeUndefined();
+    });
+
+    it("should delegate logger methods to console", () => {
+        const pool = new JobContextPool<string>("log-queue");
+        const job: Job<string> = {
+            id: "j-log",
+            data: "log-data",
+            priority: 1,
+            status: "active",
+            retryCount: 0,
+            maxAttempts: 1,
+            addedAt: new Date(),
+        };
+
+        const ctx = pool.acquire(job);
+        const spyInfo = jest.spyOn(console, "info").mockImplementation(() => {});
+        const spyWarn = jest.spyOn(console, "warn").mockImplementation(() => {});
+        const spyError = jest.spyOn(console, "error").mockImplementation(() => {});
+        const spyDebug = jest.spyOn(console, "debug").mockImplementation(() => {});
+
+        ctx.logger.info("info msg", 123);
+        ctx.logger.warn("warn msg", 456);
+        ctx.logger.error("error msg", 789);
+        ctx.logger.debug("debug msg", 0);
+
+        expect(spyInfo).toHaveBeenCalledWith("[Kodiak:log-queue:j-log] info msg", 123);
+        expect(spyWarn).toHaveBeenCalledWith("[Kodiak:log-queue:j-log] warn msg", 456);
+        expect(spyError).toHaveBeenCalledWith("[Kodiak:log-queue:j-log] error msg", 789);
+        expect(spyDebug).toHaveBeenCalledWith("[Kodiak:log-queue:j-log] debug msg", 0);
+
+        spyInfo.mockRestore();
+        spyWarn.mockRestore();
+        spyError.mockRestore();
+        spyDebug.mockRestore();
+    });
+
+    it("should track inUseCount, clear pool, and safely ignore releasing unmanaged contexts", () => {
+        const pool = new JobContextPool<string>("mgmt-queue");
+        const job: Job<string> = {
+            id: "j-mgmt",
+            data: "mgmt",
+            priority: 1,
+            status: "active",
+            retryCount: 0,
+            maxAttempts: 1,
+            addedAt: new Date(),
+        };
+
+        expect(pool.inUseCount()).toBe(0);
+        const ctx = pool.acquire(job);
+        expect(pool.inUseCount()).toBe(1);
+
+        // Releasing an unmanaged context does nothing
+        const unmanagedCtx = pool.acquire(job);
+        pool.release(unmanagedCtx);
+        // Release again
+        pool.release(unmanagedCtx);
+        expect(pool.inUseCount()).toBe(1);
+
+        pool.release(ctx);
+        expect(pool.inUseCount()).toBe(0);
+        expect(pool.availableCount()).toBe(2);
+
+        pool.clear();
+        expect(pool.availableCount()).toBe(0);
+        expect(pool.inUseCount()).toBe(0);
     });
 });

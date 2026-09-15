@@ -135,4 +135,34 @@ describe("Worker heartbeat", () => {
 
         expect(errorEmitter).toHaveBeenCalledWith(testError);
     });
+
+    it("uses default lockDuration and heartbeatInterval when heartbeatEnabled is true", async () => {
+        const job = {
+            id: "hb-default-job",
+            data: { foo: "bar" },
+            priority: 1,
+            retryCount: 0,
+            maxAttempts: 1,
+            addedAt: new Date(),
+            status: "active",
+            updateProgress: async () => {},
+        };
+
+        mockFetchExecute.mockResolvedValueOnce([job] as never).mockResolvedValueOnce([] as never);
+
+        processor.mockImplementation(async () => {
+            return new Promise((resolve) => setTimeout(resolve, 20));
+        });
+
+        const worker = new Worker("test-queue", processor, mockKodiak, {
+            heartbeatEnabled: true,
+            concurrency: 1,
+        });
+
+        await worker.start();
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        await worker.stop();
+
+        expect(processor).toHaveBeenCalled();
+    });
 });

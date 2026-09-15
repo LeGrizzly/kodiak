@@ -16,28 +16,31 @@ export interface TimingWheelOptions {
     startMs?: number;
 }
 
-class TimingWheelLevel {
+export class TimingWheelLevel {
     public readonly tickMs: number;
     public readonly wheelSize: number;
     public readonly interval: number;
     public currentTime: number;
     public readonly buckets: Map<number, TimingWheelTask[]>;
     private overflowWheel: TimingWheelLevel | null = null;
+    private readonly rootLevel: TimingWheelLevel;
 
-    constructor(tickMs: number, wheelSize: number, startMs: number) {
+    constructor(tickMs: number, wheelSize: number, startMs: number, rootLevel?: TimingWheelLevel) {
         this.tickMs = tickMs;
         this.wheelSize = wheelSize;
         this.interval = tickMs * wheelSize;
         this.currentTime = startMs - (startMs % tickMs);
         this.buckets = new Map();
+        this.rootLevel = rootLevel ?? this;
     }
 
     public add(task: TimingWheelTask): void {
         if (task.cancelled) return;
 
         if (task.deadlineMs < this.currentTime + this.tickMs) {
-            // Already due in this tick bucket
-            const bucketIndex = Math.floor(this.currentTime / this.tickMs) % this.wheelSize;
+            // Due on the next tick
+            const bucketIndex =
+                Math.floor((this.currentTime + this.tickMs) / this.tickMs) % this.wheelSize;
             this.addToBucket(bucketIndex, task);
         } else if (task.deadlineMs < this.currentTime + this.interval) {
             // Fits in this wheel level
@@ -50,6 +53,7 @@ class TimingWheelLevel {
                     this.interval,
                     this.wheelSize,
                     this.currentTime,
+                    this.rootLevel,
                 );
             }
             this.overflowWheel.add(task);
@@ -77,8 +81,8 @@ class TimingWheelLevel {
                     if (task.deadlineMs <= nowMs) {
                         expiredTasks.push(task);
                     } else {
-                        // Re-insert into this wheel or lower levels
-                        this.add(task);
+                        // Re-insert into root wheel hierarchy
+                        this.rootLevel.add(task);
                     }
                 }
             }

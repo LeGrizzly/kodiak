@@ -126,4 +126,113 @@ describe("WorkerAckBuffer", () => {
 
         expect(onError).toHaveBeenCalledWith(failureError);
     });
+
+    it("should handle maxWaitMs: 0 via queueMicrotask and non-Error throw", async () => {
+        let stringRejectionHappened = false;
+        mockCompleteUseCase.executeMany.mockImplementation(async () => {
+            if (!stringRejectionHappened) {
+                stringRejectionHappened = true;
+                return Promise.reject("raw string failure");
+            }
+            return Promise.resolve();
+        });
+
+        // maxWaitMs <= 0 triggers queueMicrotask branch
+        const buffer = new WorkerAckBuffer(
+            mockCompleteUseCase as unknown as CompleteJobUseCase<unknown>,
+            {
+                maxBatch: 10,
+                maxWaitMs: 0,
+                onError,
+            },
+        );
+
+        const jobFail = createMockJob("job-string-fail");
+        await expect(buffer.push(jobFail)).rejects.toThrow("raw string failure");
+        expect(onError).toHaveBeenCalledWith(expect.any(Error));
+
+        // Now test successful push with queueMicrotask
+        const jobOk = createMockJob("job-micro-ok");
+        await buffer.push(jobOk);
+        expect(jobOk.status).toBe("completed");
+    });
+
+    it("should handle concurrent drain while flushing is active", async () => {
+        let resolveExecute!: () => void;
+        mockCompleteUseCase.executeMany.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveExecute = resolve;
+                }),
+        );
+
+        const buffer = new WorkerAckBuffer(
+            mockCompleteUseCase as unknown as CompleteJobUseCase<unknown>,
+            {
+                maxBatch: 5,
+                maxWaitMs: 100,
+            },
+        );
+
+        const job = createMockJob("job-async");
+        const pushPromise = buffer.push(job);
+
+        // Start flush manually so isFlushing = true
+        const flushPromise1 = buffer.flush();
+
+        // Calling flush again while isFlushing should return immediately
+        await buffer.flush();
+
+        // Calling drain while isFlushing is true triggers line 122 setTimeout
+        const drainPromise = buffer.drain();
+
+        // Release the mock executeMany
+        resolveExecute();
+
+        await Promise.all([pushPromise, flushPromise1, drainPromise]);
+        expect(buffer.pendingCount).toBe(0);
+    });
+
+    it("should use default options when options is omitted", async () => {
+        const buffer = new WorkerAckBuffer(
+            mockCompleteUseCase as unknown as CompleteJobUseCase<unknown>,
+        );
+
+        const job = createMockJob("job-defaults");
+        await buffer.push(job);
+        expect(job.status).toBe("completed");
+    });
+
+    it("should handle timer without unref method", async () => {
+        const spy = jest
+            .spyOn(global, "setTimeout")
+            .mockImplementation((cb: (args: void) => void) => {
+                cb();
+                return 12345 as unknown as NodeJS.Timeout;
+            });
+
+        const buffer = new WorkerAckBuffer(
+            mockCompleteUseCase as unknown as CompleteJobUseCase<unknown>,
+            { maxBatch: 10, maxWaitMs: 50 },
+        );
+
+        const job = createMockJob("job-no-unref");
+        await buffer.push(job);
+        expect(job.status).toBe("completed");
+
+        spy.mockRestore();
+    });
+
+    it("should break in flush loop when batch is empty", async () => {
+        const buffer = new WorkerAckBuffer(
+            mockCompleteUseCase as unknown as CompleteJobUseCase<unknown>,
+            { maxBatch: 0 },
+        );
+
+        const job = createMockJob("job-zero-batch");
+        void buffer.push(job);
+        expect(buffer.pendingCount).toBe(1);
+
+        await buffer.flush();
+    });
 });

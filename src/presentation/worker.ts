@@ -136,10 +136,6 @@ export class Worker<T> extends EventEmitter {
                 const expiresAt = Date.now() + lockDuration;
                 return this.ackQueueRepository.extendLock(jobId, expiresAt, ownerToken);
             },
-            updateProgressFactory: () => async (jobId, progress) => {
-                await this.updateJobProgressUseCase.execute(jobId, progress);
-                this.emit("progress", { id: jobId } as Job<T>, progress);
-            },
         });
 
         const creditsOption = this.opts?.credits;
@@ -362,7 +358,7 @@ export class Worker<T> extends EventEmitter {
 
     private async finalizeJobSuccess(job: Job<T>): Promise<void> {
         if (this.ackBuffer) {
-            void this.ackBuffer.push(job);
+            void this.ackBuffer.push(job).catch(() => {});
             return;
         }
 
