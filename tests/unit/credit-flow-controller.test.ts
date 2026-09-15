@@ -57,4 +57,26 @@ describe("CreditFlowController", () => {
         expect(controller.getAvailableCredits()).toBe(100);
         expect(controller.hasCredit()).toBe(true);
     });
+
+    it("should handle edge cases: zero/negative consume, zero/negative replenish, min credits, and default threshold", () => {
+        // maxCredits clamped to 1 when <= 0; replenishBatchThreshold defaulted to Math.max(1, floor(1/4)) = 1
+        const controller = new CreditFlowController({ maxCredits: -5 });
+        expect(controller.getAvailableCredits()).toBe(1);
+
+        // consume <= 0
+        expect(controller.consume(0)).toBe(0);
+        expect(controller.consume(-10)).toBe(0);
+        expect(controller.getAvailableCredits()).toBe(1);
+
+        // replenish <= 0
+        controller.consume(1);
+        expect(controller.getAvailableCredits()).toBe(0);
+        controller.replenish(0);
+        controller.replenish(-3);
+        expect(controller.getAvailableCredits()).toBe(0);
+
+        // replenish without onReplenishNotice callback (reaches threshold 1)
+        controller.replenish(1);
+        expect(controller.getAvailableCredits()).toBe(1);
+    });
 });

@@ -30,6 +30,16 @@ describe("CompleteJobUseCase", () => {
         );
     });
 
+    it("should pass ownerToken to markAsCompleted when provided in execute", async () => {
+        await completeJobUseCase.execute("job-123", "owner-tok-xyz");
+
+        expect(mockQueueRepository.markAsCompleted).toHaveBeenCalledWith(
+            "job-123",
+            expect.any(Date),
+            "owner-tok-xyz",
+        );
+    });
+
     it("should pass the current date to markAsCompleted", async () => {
         const beforeCall = new Date();
         await completeJobUseCase.execute("job-456");
@@ -50,8 +60,9 @@ describe("CompleteJobUseCase", () => {
             .mockResolvedValue(undefined);
         mockQueueRepository.markManyAsCompleted = markManyAsCompleted as never;
 
+        const customDate = new Date(1234567890);
         const jobs = [
-            { jobId: "job-1", ownerToken: "token-1" },
+            { jobId: "job-1", ownerToken: "token-1", completedAt: customDate },
             { jobId: "job-2", ownerToken: "token-2" },
         ];
 

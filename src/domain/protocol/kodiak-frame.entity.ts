@@ -13,10 +13,10 @@ export const KODIAK_FRAME_MAGIC = 0x4b;
 export const KODIAK_HEADER_SIZE = 26;
 
 export interface IKodiakFrame {
-    magic: number;
+    magic?: number;
     command: KodiakOpCode;
-    flags: number;
-    priority: number;
+    flags?: number;
+    priority?: number;
     messageId: string;
     headersLength: number;
     payloadLength: number;

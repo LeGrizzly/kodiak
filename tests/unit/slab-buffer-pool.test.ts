@@ -55,4 +55,31 @@ describe("SlabBufferPool", () => {
         expect(pool.stats().freeBuffersCount).toBe(0);
         expect(pool.stats().totalAllocatedBytes).toBe(0);
     });
+
+    it("should ignore releasing a buffer not tracked in the pool", () => {
+        const pool = new SlabBufferPool();
+        const externalBuffer = new Uint8Array(512);
+
+        // Should return early without altering pool stats
+        pool.release(externalBuffer);
+        expect(pool.stats().inUseBuffersCount).toBe(0);
+    });
+
+    it("should handle oversized non-slab buffer allocation, default acquire, and release", () => {
+        const pool = new SlabBufferPool();
+
+        // Test default minSize = 1024
+        const defaultBuf = pool.acquire();
+        expect(defaultBuf.length).toBe(1024);
+        pool.release(defaultBuf);
+
+        // Oversized buffer
+        const largeBuf = pool.acquire(100000);
+        expect(largeBuf.length).toBe(100000);
+        expect(pool.stats().totalAllocatedBytes).toBe(100000 + 1024);
+
+        pool.release(largeBuf);
+        expect(pool.stats().totalAllocatedBytes).toBe(1024);
+        expect(pool.stats().inUseBytes).toBe(0);
+    });
 });

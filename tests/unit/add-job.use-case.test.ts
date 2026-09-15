@@ -218,4 +218,14 @@ describe("AddJobUseCase", () => {
 
         expect(result.traceparent).toBe(traceparent);
     });
+
+    it("should include repeat option with count initialized to 0 when provided", async () => {
+        const id = "job-repeat-test";
+        const data = { message: "repeat test" };
+        const repeat = { every: 5000, limit: 10 };
+
+        const result = await addJobUseCase.execute(id, data, { repeat });
+
+        expect(result.repeat).toEqual({ every: 5000, limit: 10, count: 0 });
+    });
 });

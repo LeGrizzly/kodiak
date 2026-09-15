@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { MsgpackJobSerializer } from "../../src/infrastructure/serializers/msgpack-job.serializer.js";
 
 describe("MsgpackJobSerializer", () => {
@@ -72,5 +73,29 @@ describe("MsgpackJobSerializer", () => {
         const corrupted = new Uint8Array([0x81]); // fixmap with 1 entry, but truncated (missing key/value)
 
         expect(() => serializer.deserialize(corrupted)).toThrow(/Failed to deserialize job data/);
+    });
+
+    it("should handle non-Error thrown during deserialization", () => {
+        const packr = (serializer as unknown as { packr: { unpack: () => unknown } }).packr;
+        jest.spyOn(packr, "unpack").mockImplementationOnce(() => {
+            throw "non-error-string";
+        });
+
+        expect(() => serializer.deserialize(new Uint8Array([1, 2, 3]))).toThrow(
+            "Failed to deserialize job data: non-error-string",
+        );
+    });
+
+    it("should deserialize raw JSON string object and array", () => {
+        expect(serializer.deserialize('{"key":"val"}')).toEqual({ key: "val" });
+        expect(serializer.deserialize('[1, 2, "three"]')).toEqual([1, 2, "three"]);
+    });
+
+    it("should deserialize latin1 encoded msgpack binary string", () => {
+        const data = { hello: "world" };
+        const packed = serializer.serialize(data);
+        const latin1String = Buffer.from(packed).toString("latin1");
+
+        expect(serializer.deserialize(latin1String)).toEqual(data);
     });
 });
