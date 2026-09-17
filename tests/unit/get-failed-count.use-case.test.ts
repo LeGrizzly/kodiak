@@ -1,20 +1,18 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import { GetFailedCountUseCase } from "../../src/application/use-cases/get-failed-count.use-case.js";
 import type { IDLQRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("GetFailedCountUseCase", () => {
     let useCase: GetFailedCountUseCase<unknown>;
-    let mockRepository: jest.Mocked<IDLQRepository<unknown>>;
+    let mockRepository: Mocked<IDLQRepository<unknown>>;
 
     beforeEach(() => {
         mockRepository = {
-            getFailedCount: jest
-                .fn<IDLQRepository<unknown>["getFailedCount"]>()
-                .mockResolvedValue(5),
-            getFailedJobs: jest.fn(),
-            retryJob: jest.fn(),
-            retryAllFailed: jest.fn(),
-            cleanFailed: jest.fn(),
+            getFailedCount: vi.fn<IDLQRepository<unknown>["getFailedCount"]>().mockResolvedValue(5),
+            getFailedJobs: vi.fn(),
+            retryJob: vi.fn(),
+            retryAllFailed: vi.fn(),
+            cleanFailed: vi.fn(),
         };
         useCase = new GetFailedCountUseCase(mockRepository);
     });

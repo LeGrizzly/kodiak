@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import { WorkerBuffer } from "../../src/presentation/worker-buffer.js";
 

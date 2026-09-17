@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MsgpackJobSerializer } from "../../src/infrastructure/serializers/msgpack-job.serializer.js";
 
 describe("MsgpackJobSerializer", () => {
@@ -77,7 +77,7 @@ describe("MsgpackJobSerializer", () => {
 
     it("should handle non-Error thrown during deserialization", () => {
         const packr = (serializer as unknown as { packr: { unpack: () => unknown } }).packr;
-        jest.spyOn(packr, "unpack").mockImplementationOnce(() => {
+        vi.spyOn(packr, "unpack").mockImplementationOnce(() => {
             throw "non-error-string";
         });
 

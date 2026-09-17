@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, vi } from "vitest";
 import {
     KODIAK_FRAME_MAGIC,
     KODIAK_HEADER_SIZE,
@@ -192,7 +192,7 @@ describe("KodiakFrameCodec", () => {
         buffer[4] = 0x41; // 'A'
         buffer[5] = 0x00; // trailing null
 
-        const decodeSpy = jest.spyOn(TextDecoder.prototype, "decode").mockImplementationOnce(() => {
+        const decodeSpy = vi.spyOn(TextDecoder.prototype, "decode").mockImplementationOnce(() => {
             throw new Error("TextDecoder failed");
         });
 

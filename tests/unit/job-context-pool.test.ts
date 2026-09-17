@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, vi } from "vitest";
 import { JobContextPool, PooledJobContext } from "../../src/application/dtos/job-context-pool.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 
@@ -67,8 +67,8 @@ describe("JobContextPool", () => {
     });
 
     it("should execute bound heartbeat and updateProgress callbacks", async () => {
-        const mockHeartbeat = jest.fn().mockResolvedValue(true as never);
-        const mockUpdateProgress = jest.fn().mockResolvedValue(undefined as never);
+        const mockHeartbeat = vi.fn().mockResolvedValue(true as never);
+        const mockUpdateProgress = vi.fn().mockResolvedValue(undefined as never);
 
         const pool = new JobContextPool<string>("exec-queue", {
             heartbeatFactory: () => async (jobId: string, ownerToken?: string) =>
@@ -136,10 +136,10 @@ describe("JobContextPool", () => {
         };
 
         const ctx = pool.acquire(job);
-        const spyInfo = jest.spyOn(console, "info").mockImplementation(() => {});
-        const spyWarn = jest.spyOn(console, "warn").mockImplementation(() => {});
-        const spyError = jest.spyOn(console, "error").mockImplementation(() => {});
-        const spyDebug = jest.spyOn(console, "debug").mockImplementation(() => {});
+        const spyInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+        const spyWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const spyError = vi.spyOn(console, "error").mockImplementation(() => {});
+        const spyDebug = vi.spyOn(console, "debug").mockImplementation(() => {});
 
         ctx.logger.info("info msg", 123);
         ctx.logger.warn("warn msg", 456);

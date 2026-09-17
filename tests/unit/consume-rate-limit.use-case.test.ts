@@ -1,15 +1,15 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import { ConsumeRateLimitUseCase } from "../../src/application/use-cases/consume-rate-limit.use-case.js";
 import type { IRateLimiterRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("Unit: ConsumeRateLimitUseCase", () => {
-    let repository: jest.Mocked<IRateLimiterRepository>;
+    let repository: Mocked<IRateLimiterRepository>;
     let useCase: ConsumeRateLimitUseCase;
 
     beforeEach(() => {
         repository = {
-            consumeRateLimit: jest.fn<IRateLimiterRepository["consumeRateLimit"]>(),
-            getRateLimitStatus: jest.fn<IRateLimiterRepository["getRateLimitStatus"]>(),
+            consumeRateLimit: vi.fn<IRateLimiterRepository["consumeRateLimit"]>(),
+            getRateLimitStatus: vi.fn<IRateLimiterRepository["getRateLimitStatus"]>(),
         };
         useCase = new ConsumeRateLimitUseCase(repository);
     });

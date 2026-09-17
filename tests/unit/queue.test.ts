@@ -1,25 +1,26 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockExecute = jest.fn();
-jest.unstable_mockModule("../../src/application/use-cases/add-job.use-case.js", () => ({
-    AddJobUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockExecute,
-    })),
+const mockExecute = vi.fn();
+vi.doMock("../../src/application/use-cases/add-job.use-case.js", () => ({
+    AddJobUseCase: vi.fn(function MockAddJobUseCase() {
+        return {
+            execute: mockExecute,
+        };
+    }),
 }));
 
-const mockPromoteDelayedJobs = jest.fn().mockResolvedValue(0 as never);
-const mockRecoverStalledJobs = jest.fn().mockResolvedValue([] as never);
+const mockPromoteDelayedJobs = vi.fn().mockResolvedValue(0 as never);
+const mockRecoverStalledJobs = vi.fn().mockResolvedValue([] as never);
 
-jest.unstable_mockModule(
-    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
-    () => ({
-        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
+vi.doMock("../../src/infrastructure/dragonfly/dragonfly-queue.repository.js", () => ({
+    DragonflyQueueRepository: vi.fn(function MockDragonflyQueueRepository() {
+        return {
             promoteDelayedJobs: mockPromoteDelayedJobs,
             recoverStalledJobs: mockRecoverStalledJobs,
-            add: jest.fn(),
-        })),
+            add: vi.fn(),
+        };
     }),
-);
+}));
 
 const { Queue } = await import("../../src/presentation/queue.js");
 
@@ -29,11 +30,11 @@ describe("Unit: Queue", () => {
     let mockKodiak: Kodiak;
 
     beforeEach(() => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
 
         const mockConnection = {
-            duplicate: jest.fn(() => mockConnection),
-            quit: jest.fn().mockResolvedValue("OK" as never),
+            duplicate: vi.fn(() => mockConnection),
+            quit: vi.fn().mockResolvedValue("OK" as never),
         };
 
         mockKodiak = {
@@ -45,17 +46,17 @@ describe("Unit: Queue", () => {
     });
 
     afterEach(() => {
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("should start a scheduler that calls promoteDelayedJobs periodically", async () => {
         const queue = new Queue("test-queue", mockKodiak);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
 
         expect(mockPromoteDelayedJobs).toHaveBeenCalledTimes(1);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
 
         expect(mockPromoteDelayedJobs).toHaveBeenCalledTimes(2);
 
@@ -65,12 +66,12 @@ describe("Unit: Queue", () => {
     it("should stop the scheduler when closed", async () => {
         const queue = new Queue("test-queue", mockKodiak);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         expect(mockPromoteDelayedJobs).toHaveBeenCalledTimes(1);
 
         await queue.close();
 
-        jest.advanceTimersByTime(10000);
+        vi.advanceTimersByTime(10000);
         expect(mockPromoteDelayedJobs).toHaveBeenCalledTimes(1);
     });
 
@@ -78,10 +79,10 @@ describe("Unit: Queue", () => {
         mockPromoteDelayedJobs.mockRejectedValueOnce(new Error("Redis error") as never);
 
         const queue = new Queue("test-queue", mockKodiak);
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         queue.on("error", errorEmitter);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
 
         await Promise.resolve();
 
@@ -143,7 +144,7 @@ describe("Unit: Queue", () => {
 
         let scheduledCb: (() => Promise<void>) | null = null;
 
-        const setIntervalSpy = jest.spyOn(global, "setInterval").mockImplementation(((
+        const setIntervalSpy = vi.spyOn(global, "setInterval").mockImplementation(((
             cb: (...args: unknown[]) => void,
         ): NodeJS.Timeout => {
             scheduledCb = cb as () => Promise<void>;
@@ -169,7 +170,7 @@ describe("Unit: Queue", () => {
 
         let scheduledCb: (() => Promise<void>) | null = null;
 
-        const setIntervalSpy = jest.spyOn(global, "setInterval").mockImplementation(((
+        const setIntervalSpy = vi.spyOn(global, "setInterval").mockImplementation(((
             cb: (...args: unknown[]) => void,
         ): NodeJS.Timeout => {
             scheduledCb = cb as () => Promise<void>;
@@ -177,7 +178,7 @@ describe("Unit: Queue", () => {
         }) as typeof setInterval);
 
         const queue = new Queue("test-queue", mockKodiak);
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         queue.on("error", errorEmitter);
 
         if (typeof scheduledCb === "function") {
@@ -188,6 +189,32 @@ describe("Unit: Queue", () => {
 
         setIntervalSpy.mockRestore();
 
+        await queue.close();
+    });
+
+    it("should accept serializer directly as fourth parameter", async () => {
+        const customSerializer = {
+            serialize: vi.fn(),
+            deserialize: vi.fn(),
+        };
+        const queue = new Queue("test-queue", mockKodiak, undefined, customSerializer);
+        expect(queue).toBeDefined();
+        await queue.close();
+    });
+
+    it("should accept limiter in options as fourth parameter", async () => {
+        const queue = new Queue("test-queue", mockKodiak, undefined, {
+            limiter: { max: 10, duration: 1000 },
+        });
+        expect(queue).toBeDefined();
+        await queue.close();
+    });
+
+    it("should accept pipelining in options without limiter as fourth parameter", async () => {
+        const queue = new Queue("test-queue", mockKodiak, undefined, {
+            pipelining: { maxBatch: 10 },
+        });
+        expect(queue).toBeDefined();
         await queue.close();
     });
 });

@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
-jest.unstable_mockModule("fs", () => ({
-    readFileSync: jest.fn().mockReturnValue("return 1"),
+vi.doMock("fs", () => ({
+    readFileSync: vi.fn().mockReturnValue("return 1"),
     default: {
-        readFileSync: jest.fn().mockReturnValue("return 1"),
+        readFileSync: vi.fn().mockReturnValue("return 1"),
     },
 }));
 
@@ -12,8 +12,8 @@ const { DragonflyQueueRepository } = await import(
     "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js"
 );
 
-type AnyAsyncMock = jest.Mock<(...args: unknown[]) => Promise<unknown>>;
-type AnySyncMock = jest.Mock<(...args: unknown[]) => unknown>;
+type AnyAsyncMock = Mock<(...args: unknown[]) => Promise<unknown>>;
+type AnySyncMock = Mock<(...args: unknown[]) => unknown>;
 
 describe("Unit: DragonflyQueueRepository DLQ", () => {
     let repository: InstanceType<typeof DragonflyQueueRepository>;
@@ -31,16 +31,16 @@ describe("Unit: DragonflyQueueRepository DLQ", () => {
 
     beforeEach(() => {
         mockPipeline = {
-            hgetall: jest.fn<(...args: unknown[]) => unknown>().mockReturnThis(),
-            exec: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+            hgetall: vi.fn<(...args: unknown[]) => unknown>().mockReturnThis(),
+            exec: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
         };
 
         mockRedis = {
-            eval: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
-            zcard: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
-            zrevrange: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
-            zrange: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
-            pipeline: jest.fn<(...args: unknown[]) => unknown>().mockReturnValue(mockPipeline),
+            eval: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+            zcard: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+            zrevrange: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+            zrange: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+            pipeline: vi.fn<(...args: unknown[]) => unknown>().mockReturnValue(mockPipeline),
         };
 
         repository = new DragonflyQueueRepository(
@@ -48,7 +48,7 @@ describe("Unit: DragonflyQueueRepository DLQ", () => {
             mockRedis as unknown as Redis,
             "kodiak-test",
         );
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it("should getFailedCount via zcard on deadKey", async () => {

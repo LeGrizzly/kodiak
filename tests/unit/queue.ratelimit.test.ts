@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import type {
     IQueueRepository,
     IRateLimiterRepository,
@@ -9,13 +9,13 @@ import { Queue } from "../../src/presentation/queue.js";
 
 describe("Unit: Queue Rate Limiting Methods", () => {
     let queue: Queue<{ message: string }>;
-    let mockRepository: jest.Mocked<IQueueRepository<{ message: string }> & IRateLimiterRepository>;
+    let mockRepository: Mocked<IQueueRepository<{ message: string }> & IRateLimiterRepository>;
     let mockKodiak: Kodiak;
 
     beforeEach(() => {
         const mockConnection = {
-            duplicate: jest.fn(() => mockConnection),
-            quit: jest.fn<() => Promise<string>>().mockResolvedValue("OK"),
+            duplicate: vi.fn(() => mockConnection),
+            quit: vi.fn<() => Promise<string>>().mockResolvedValue("OK"),
         };
 
         mockKodiak = {
@@ -24,23 +24,23 @@ describe("Unit: Queue Rate Limiting Methods", () => {
         } as unknown as Kodiak;
 
         mockRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            fetchNextJobs: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest.fn(),
-            updateProgress: jest.fn(),
-            promoteDelayedJobs: jest
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            fetchNextJobs: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi.fn(),
+            updateProgress: vi.fn(),
+            promoteDelayedJobs: vi
                 .fn<IQueueRepository<{ message: string }>["promoteDelayedJobs"]>()
                 .mockResolvedValue(0 as never),
-            recoverStalledJobs: jest
+            recoverStalledJobs: vi
                 .fn<IQueueRepository<{ message: string }>["recoverStalledJobs"]>()
                 .mockResolvedValue([] as never),
-            extendLock: jest.fn(),
-            releaseJobs: jest.fn(),
-            consumeRateLimit: jest.fn<IRateLimiterRepository["consumeRateLimit"]>(),
-            getRateLimitStatus: jest.fn<IRateLimiterRepository["getRateLimitStatus"]>(),
-        } as unknown as jest.Mocked<IQueueRepository<{ message: string }> & IRateLimiterRepository>;
+            extendLock: vi.fn(),
+            releaseJobs: vi.fn(),
+            consumeRateLimit: vi.fn<IRateLimiterRepository["consumeRateLimit"]>(),
+            getRateLimitStatus: vi.fn<IRateLimiterRepository["getRateLimitStatus"]>(),
+        } as unknown as Mocked<IQueueRepository<{ message: string }> & IRateLimiterRepository>;
 
         queue = new Queue("test-queue", mockKodiak, mockRepository);
     });

@@ -1,32 +1,31 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 let mockKodiak: Kodiak;
 
-const mockPromoteDelayedJobs = jest.fn().mockResolvedValue(0 as never);
-const mockRecoverStalledJobs = jest.fn().mockResolvedValue([] as never);
+const mockPromoteDelayedJobs = vi.fn().mockResolvedValue(0 as never);
+const mockRecoverStalledJobs = vi.fn().mockResolvedValue([] as never);
 
-jest.unstable_mockModule(
-    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
-    () => ({
-        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
+vi.doMock("../../src/infrastructure/dragonfly/dragonfly-queue.repository.js", () => ({
+    DragonflyQueueRepository: vi.fn(function MockDragonflyQueueRepository() {
+        return {
             promoteDelayedJobs: mockPromoteDelayedJobs,
             recoverStalledJobs: mockRecoverStalledJobs,
-            add: jest.fn(),
-        })),
+            add: vi.fn(),
+        };
     }),
-);
+}));
 
 const { Queue } = await import("../../src/presentation/queue.js");
 
 describe("Unit: Queue stalled recovery scheduler", () => {
     beforeEach(() => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
 
         const mockConnection = {
-            duplicate: jest.fn(() => mockConnection),
-            quit: jest.fn().mockResolvedValue("OK" as never),
+            duplicate: vi.fn(() => mockConnection),
+            quit: vi.fn().mockResolvedValue("OK" as never),
         };
 
         mockKodiak = {
@@ -39,18 +38,18 @@ describe("Unit: Queue stalled recovery scheduler", () => {
     });
 
     afterEach(async () => {
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("should call recoverStalledJobs periodically", async () => {
         const queue = new Queue("test-queue", mockKodiak);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
 
         expect(mockRecoverStalledJobs).toHaveBeenCalledTimes(1);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
 
         expect(mockRecoverStalledJobs).toHaveBeenCalledTimes(2);
@@ -65,7 +64,7 @@ describe("Unit: Queue stalled recovery scheduler", () => {
 
         mockRecoverStalledJobs.mockResolvedValueOnce(["job-stalled-1", "job-stalled-2"] as never);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
         await Promise.resolve();
 
@@ -84,7 +83,7 @@ describe("Unit: Queue stalled recovery scheduler", () => {
 
         mockPromoteDelayedJobs.mockRejectedValueOnce(new Error("Promote failure") as never);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
         await Promise.resolve();
 
@@ -101,7 +100,7 @@ describe("Unit: Queue stalled recovery scheduler", () => {
 
         mockRecoverStalledJobs.mockRejectedValueOnce(new Error("Recovery failure") as never);
 
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
         await Promise.resolve();
 
@@ -122,12 +121,12 @@ describe("Unit: Queue stalled recovery scheduler", () => {
         mockRecoverStalledJobs.mockReturnValueOnce(hangingPromise as never);
 
         // Tick 1: enters recoverStalledJobs and sets recoveringStalledJobs = true
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
         expect(mockRecoverStalledJobs).toHaveBeenCalledTimes(1);
 
         // Tick 2: recoveringStalledJobs is still true, should return early
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
         expect(mockRecoverStalledJobs).toHaveBeenCalledTimes(1);
 
@@ -137,7 +136,7 @@ describe("Unit: Queue stalled recovery scheduler", () => {
         await Promise.resolve();
 
         // Tick 3: now recoveringStalledJobs is false, can run again
-        jest.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(5000);
         await Promise.resolve();
         expect(mockRecoverStalledJobs).toHaveBeenCalledTimes(2);
 
@@ -146,7 +145,7 @@ describe("Unit: Queue stalled recovery scheduler", () => {
 
     it("should safely handle scheduler when unref is not a function", async () => {
         const fakeTimer = { [Symbol.toPrimitive]: () => 123 } as unknown as NodeJS.Timeout;
-        jest.spyOn(global, "setInterval").mockReturnValueOnce(fakeTimer);
+        vi.spyOn(global, "setInterval").mockReturnValueOnce(fakeTimer);
 
         const queue = new Queue("test-queue", mockKodiak);
         expect(queue).toBeDefined();

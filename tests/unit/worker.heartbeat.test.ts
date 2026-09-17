@@ -1,59 +1,60 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import { afterEach, beforeEach, describe, expect, it, type MockedFunction, vi } from "vitest";
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
-const mockExtendLock = jest.fn();
-const mockFetchExecute = jest.fn();
+const mockExtendLock = vi.fn();
+const mockFetchExecute = vi.fn();
 
-jest.unstable_mockModule(
-    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
-    () => ({
-        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
-            updateProgress: jest.fn(),
-            fetchNextJobs: jest.fn(),
+vi.doMock("../../src/infrastructure/dragonfly/dragonfly-queue.repository.js", () => ({
+    DragonflyQueueRepository: vi.fn(function MockDragonflyQueueRepository() {
+        return {
+            updateProgress: vi.fn(),
+            fetchNextJobs: vi.fn(),
             extendLock: mockExtendLock,
-            markAsFailed: jest.fn().mockResolvedValue(undefined as never),
-            markAsCompleted: jest.fn().mockResolvedValue(undefined as never),
-        })),
+            markAsFailed: vi.fn().mockResolvedValue(undefined as never),
+            markAsCompleted: vi.fn().mockResolvedValue(undefined as never),
+        };
     }),
-);
+}));
 
-jest.unstable_mockModule("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
-    FetchJobsUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockFetchExecute,
-    })),
+vi.doMock("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
+    FetchJobsUseCase: vi.fn(function MockFetchJobsUseCase() {
+        return {
+            execute: mockFetchExecute,
+        };
+    }),
 }));
 
 const { Worker } = await import("../../src/presentation/worker.js");
 
 describe("Worker heartbeat", () => {
     let mockKodiak: Kodiak;
-    let processor: jest.MockedFunction<(job: unknown) => Promise<void>>;
+    let processor: MockedFunction<(job: unknown) => Promise<void>>;
 
     beforeEach(() => {
         mockExtendLock.mockReset();
         mockFetchExecute.mockReset();
 
         const mockRedisConnection = {
-            duplicate: jest.fn().mockReturnThis(),
-            quit: jest.fn(),
-            disconnect: jest.fn(),
-            brpop: jest.fn(),
+            duplicate: vi.fn().mockReturnThis(),
+            quit: vi.fn(),
+            disconnect: vi.fn(),
+            brpop: vi.fn(),
         };
 
         mockKodiak = {
             connection: mockRedisConnection as unknown as Redis,
             prefix: "kodiak-test",
         } as unknown as Kodiak;
-        processor = jest.fn() as jest.MockedFunction<(job: unknown) => Promise<void>>;
+        processor = vi.fn() as MockedFunction<(job: unknown) => Promise<void>>;
     });
 
     afterEach(() => {
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("calls extendLock periodically when heartbeatEnabled", async () => {
-        jest.useRealTimers();
+        vi.useRealTimers();
 
         const job = {
             id: "hb-job",
@@ -95,7 +96,7 @@ describe("Worker heartbeat", () => {
     });
 
     it("emits error when extendLock throws inside heartbeat", async () => {
-        jest.useRealTimers();
+        vi.useRealTimers();
 
         const job = {
             id: "hb-job",
@@ -124,7 +125,7 @@ describe("Worker heartbeat", () => {
             concurrency: 1,
         });
 
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         worker.on("error", errorEmitter);
 
         await worker.start();

@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import { GetFailedJobsUseCase } from "../../src/application/use-cases/get-failed-jobs.use-case.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import type { IDLQRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("GetFailedJobsUseCase", () => {
     let useCase: GetFailedJobsUseCase<string>;
-    let mockRepository: jest.Mocked<IDLQRepository<string>>;
+    let mockRepository: Mocked<IDLQRepository<string>>;
 
     const mockJob: Job<string> = {
         id: "job-failed-1",
@@ -21,13 +21,13 @@ describe("GetFailedJobsUseCase", () => {
 
     beforeEach(() => {
         mockRepository = {
-            getFailedCount: jest.fn(),
-            getFailedJobs: jest
+            getFailedCount: vi.fn(),
+            getFailedJobs: vi
                 .fn<IDLQRepository<string>["getFailedJobs"]>()
                 .mockResolvedValue([mockJob]),
-            retryJob: jest.fn(),
-            retryAllFailed: jest.fn(),
-            cleanFailed: jest.fn(),
+            retryJob: vi.fn(),
+            retryAllFailed: vi.fn(),
+            cleanFailed: vi.fn(),
         };
         useCase = new GetFailedJobsUseCase(mockRepository);
     });

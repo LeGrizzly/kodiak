@@ -1,4 +1,4 @@
-import { jest } from "@jest/globals";
+import { type Mocked, vi } from "vitest";
 import { AddJobUseCase } from "../../src/application/use-cases/add-job.use-case.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
@@ -7,20 +7,20 @@ const PRIORITY_MULTIPLIER = 10000000000000;
 
 describe("AddJobUseCase", () => {
     let addJobUseCase: AddJobUseCase<{ message: string }>;
-    let mockQueueRepository: jest.Mocked<IQueueRepository<{ message: string }>>;
+    let mockQueueRepository: Mocked<IQueueRepository<{ message: string }>>;
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest.fn().mockResolvedValue(undefined as never),
-            fetchNext: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest.fn(),
-            updateProgress: jest.fn().mockResolvedValue(undefined as never),
-            fetchNextJobs: jest.fn(),
-            promoteDelayedJobs: jest.fn(),
-            recoverStalledJobs: jest.fn(),
-            extendLock: jest.fn(),
-        } as unknown as jest.Mocked<IQueueRepository<{ message: string }>>;
+            add: vi.fn().mockResolvedValue(undefined as never),
+            fetchNext: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi.fn(),
+            updateProgress: vi.fn().mockResolvedValue(undefined as never),
+            fetchNextJobs: vi.fn(),
+            promoteDelayedJobs: vi.fn(),
+            recoverStalledJobs: vi.fn(),
+            extendLock: vi.fn(),
+        } as unknown as Mocked<IQueueRepository<{ message: string }>>;
         addJobUseCase = new AddJobUseCase(mockQueueRepository);
     });
 
@@ -155,14 +155,14 @@ describe("AddJobUseCase", () => {
         const data = { message: "fifo test" };
         const priority = 5;
 
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const baseTime = Date.now();
-        jest.setSystemTime(baseTime);
+        vi.setSystemTime(baseTime);
 
         await addJobUseCase.execute("job-first", data, { priority });
         const firstScore = mockQueueRepository.add.mock.calls[0]?.[1];
 
-        jest.setSystemTime(baseTime + 10);
+        vi.setSystemTime(baseTime + 10);
 
         await addJobUseCase.execute("job-second", data, { priority });
         const secondScore = mockQueueRepository.add.mock.calls[1]?.[1];
@@ -171,7 +171,7 @@ describe("AddJobUseCase", () => {
         expect(typeof secondScore).toBe("number");
         expect(firstScore ?? 0).toBeLessThan(secondScore ?? 0);
 
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("should return the created job", async () => {

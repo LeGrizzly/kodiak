@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import { FailJobUseCase } from "../../src/application/use-cases/fail-job.use-case.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
@@ -6,26 +6,26 @@ import type { BackoffStrategy } from "../../src/domain/strategies/backoff.strate
 
 describe("FailJobUseCase", () => {
     let failJobUseCase: FailJobUseCase<unknown>;
-    let mockQueueRepository: jest.Mocked<IQueueRepository<unknown>>;
+    let mockQueueRepository: Mocked<IQueueRepository<unknown>>;
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi
                 .fn<IQueueRepository<unknown>["markAsFailed"]>()
                 .mockResolvedValue(undefined),
-            updateProgress: jest
+            updateProgress: vi
                 .fn<IQueueRepository<unknown>["updateProgress"]>()
                 .mockResolvedValue(undefined),
-            fetchNextJobs: jest.fn(),
-            promoteDelayedJobs: jest.fn(),
-            recoverStalledJobs: jest.fn(),
-            releaseJobs: jest
+            fetchNextJobs: vi.fn(),
+            promoteDelayedJobs: vi.fn(),
+            recoverStalledJobs: vi.fn(),
+            releaseJobs: vi
                 .fn<IQueueRepository<unknown>["releaseJobs"]>()
                 .mockResolvedValue(undefined),
-            extendLock: jest.fn<IQueueRepository<unknown>["extendLock"]>().mockResolvedValue(true),
+            extendLock: vi.fn<IQueueRepository<unknown>["extendLock"]>().mockResolvedValue(true),
         };
         failJobUseCase = new FailJobUseCase(mockQueueRepository);
     });
@@ -66,7 +66,7 @@ describe("FailJobUseCase", () => {
         const error = new Error("Error");
 
         const now = Date.now();
-        jest.useFakeTimers({ now });
+        vi.useFakeTimers({ now });
 
         await failJobUseCase.execute(job, error);
 
@@ -79,7 +79,7 @@ describe("FailJobUseCase", () => {
             expect.any(String),
         );
 
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("should calculate exponential backoff correctly", async () => {
@@ -97,7 +97,7 @@ describe("FailJobUseCase", () => {
         });
 
         const now = Date.now();
-        jest.useFakeTimers({ now });
+        vi.useFakeTimers({ now });
 
         await failJobUseCase.execute(job1, new Error("E1"));
         expect(mockQueueRepository.markAsFailed).toHaveBeenLastCalledWith(
@@ -129,7 +129,7 @@ describe("FailJobUseCase", () => {
             expect.any(String),
         );
 
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("should use custom backoff strategy if provided", async () => {
@@ -147,7 +147,7 @@ describe("FailJobUseCase", () => {
         });
 
         const now = Date.now();
-        jest.useFakeTimers({ now });
+        vi.useFakeTimers({ now });
 
         await failJobUseCase.execute(job, new Error("E"));
 
@@ -160,7 +160,7 @@ describe("FailJobUseCase", () => {
             expect.any(String),
         );
 
-        jest.useRealTimers();
+        vi.useRealTimers();
     });
 
     it("should fallback to default behavior (no nextAttempt) if custom strategy not found", async () => {

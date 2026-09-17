@@ -1,21 +1,21 @@
-import { jest } from "@jest/globals";
+import { type Mocked, vi } from "vitest";
 import { UpdateJobProgressUseCase } from "../../src/application/use-cases/update-job-progress.use-case.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("UpdateJobProgressUseCase", () => {
     let updateJobProgressUseCase: UpdateJobProgressUseCase<unknown>;
-    let mockQueueRepository: jest.Mocked<IQueueRepository<unknown>>;
+    let mockQueueRepository: Mocked<IQueueRepository<unknown>>;
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest.fn(),
-            updateProgress: jest
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi.fn(),
+            updateProgress: vi
                 .fn<IQueueRepository<unknown>["updateProgress"]>()
                 .mockResolvedValue(undefined as never),
-        } as unknown as jest.Mocked<IQueueRepository<unknown>>;
+        } as unknown as Mocked<IQueueRepository<unknown>>;
         updateJobProgressUseCase = new UpdateJobProgressUseCase(mockQueueRepository);
     });
 

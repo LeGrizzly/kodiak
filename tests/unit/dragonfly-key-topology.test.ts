@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import { DragonflyKeyTopology } from "../../src/infrastructure/dragonfly/dragonfly-key-topology.js";
 
 describe("DragonflyKeyTopology", () => {

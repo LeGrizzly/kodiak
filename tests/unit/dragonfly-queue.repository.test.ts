@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 
-jest.unstable_mockModule("fs", () => ({
-    readFileSync: jest.fn().mockReturnValue("return 1"),
+vi.doMock("fs", () => ({
+    readFileSync: vi.fn().mockReturnValue("return 1"),
     default: {
-        readFileSync: jest.fn().mockReturnValue("return 1"),
+        readFileSync: vi.fn().mockReturnValue("return 1"),
     },
 }));
 
@@ -16,33 +16,33 @@ const { DragonflyQueueRepository } = await import(
 describe("Unit: DragonflyQueueRepository", () => {
     let repository: InstanceType<typeof DragonflyQueueRepository>;
     let mockRedis: Redis;
-    let mockPipeline: Record<string, jest.Mock>;
+    let mockPipeline: Record<string, Mock>;
 
     beforeEach(() => {
         mockPipeline = {
-            hset: jest.fn().mockReturnThis(),
-            hdel: jest.fn().mockReturnThis(),
-            hgetall: jest.fn().mockReturnThis(),
-            lrem: jest.fn().mockReturnThis(),
-            hincrby: jest.fn().mockReturnThis(),
-            eval: jest.fn().mockReturnThis(),
-            evalsha: jest.fn().mockReturnThis(),
-            exec: jest.fn(),
+            hset: vi.fn().mockReturnThis(),
+            hdel: vi.fn().mockReturnThis(),
+            hgetall: vi.fn().mockReturnThis(),
+            lrem: vi.fn().mockReturnThis(),
+            hincrby: vi.fn().mockReturnThis(),
+            eval: vi.fn().mockReturnThis(),
+            evalsha: vi.fn().mockReturnThis(),
+            exec: vi.fn(),
         };
 
         mockRedis = {
-            eval: jest.fn(),
-            pipeline: jest.fn().mockReturnValue(mockPipeline),
+            eval: vi.fn(),
+            pipeline: vi.fn().mockReturnValue(mockPipeline),
         } as unknown as Redis;
 
         repository = new DragonflyQueueRepository("test-queue", mockRedis, "kodiak-test");
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it("should return null if pipeline execution returns null", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue("job-123" as never);
+        (mockRedis.eval as Mock).mockResolvedValue("job-123" as never);
 
-        (mockPipeline.exec as jest.Mock).mockResolvedValue(null as never);
+        (mockPipeline.exec as Mock).mockResolvedValue(null as never);
 
         const result = await repository.fetchNext();
 
@@ -50,8 +50,8 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should return null if brpop times out", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(null as never);
-        const brpopMock = jest.fn().mockResolvedValue(null as never);
+        (mockRedis.eval as Mock).mockResolvedValue(null as never);
+        const brpopMock = vi.fn().mockResolvedValue(null as never);
         mockRedis.brpop = brpopMock as Redis["brpop"];
 
         const result = await repository.fetchNext(2);
@@ -83,7 +83,7 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should mark multiple jobs as completed using pipeline", async () => {
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, 1],
             [null, 1],
         ] as never);
@@ -169,7 +169,7 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should call promoteDelayedJobs Lua script", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(5 as never);
+        (mockRedis.eval as Mock).mockResolvedValue(5 as never);
 
         const count = await repository.promoteDelayedJobs(100);
 
@@ -279,7 +279,7 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should call recoverStalledJobs Lua script", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(["job-1", "job-2"] as never);
+        (mockRedis.eval as Mock).mockResolvedValue(["job-1", "job-2"] as never);
 
         const recoveredJobs = await repository.recoverStalledJobs();
 
@@ -327,8 +327,8 @@ describe("Unit: DragonflyQueueRepository", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, jobData1],
             [null, "OK"],
@@ -351,7 +351,7 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should return empty array when fetchNextJobs returns no job ids", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue([] as never);
+        (mockRedis.eval as Mock).mockResolvedValue([] as never);
 
         const jobs = await repository.fetchNextJobs(10, 30000);
 
@@ -359,8 +359,8 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should return empty array when fetchNextJobs pipeline returns null", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(["job-1"] as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue(null as never);
+        (mockRedis.eval as Mock).mockResolvedValue(["job-1"] as never);
+        (mockPipeline.exec as Mock).mockResolvedValue(null as never);
 
         const jobs = await repository.fetchNextJobs(1, 30000);
 
@@ -378,8 +378,8 @@ describe("Unit: DragonflyQueueRepository", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [new Error("Redis error"), null],
             [null, "OK"],
@@ -410,8 +410,8 @@ describe("Unit: DragonflyQueueRepository", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, invalidJobData],
             [null, "OK"],
@@ -435,8 +435,8 @@ describe("Unit: DragonflyQueueRepository", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, jobData],
         ] as never);
@@ -445,7 +445,7 @@ describe("Unit: DragonflyQueueRepository", () => {
 
         expect(jobs).toHaveLength(1);
 
-        (mockRedis.eval as jest.Mock).mockClear();
+        (mockRedis.eval as Mock).mockClear();
 
         await jobs[0]?.updateProgress?.(75);
 
@@ -467,11 +467,11 @@ describe("Unit: DragonflyQueueRepository", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock)
+        (mockRedis.eval as Mock)
             .mockResolvedValueOnce(null as never)
             .mockResolvedValueOnce(["job-1", Object.entries(jobData).flat()] as never);
 
-        const brpopMock = jest.fn().mockResolvedValue(["notify-key", "job-1"] as never);
+        const brpopMock = vi.fn().mockResolvedValue(["notify-key", "job-1"] as never);
         mockRedis.brpop = brpopMock as Redis["brpop"];
 
         const result = await repository.fetchNext(5);
@@ -491,7 +491,7 @@ describe("Unit: DragonflyQueueRepository", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue([
             "job-1",
             Object.entries(jobData).flat(),
         ] as never);
@@ -503,11 +503,11 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should return null when brpop succeeds but second eval returns null", async () => {
-        (mockRedis.eval as jest.Mock)
+        (mockRedis.eval as Mock)
             .mockResolvedValueOnce(null as never)
             .mockResolvedValueOnce(null as never);
 
-        const brpopMock = jest.fn().mockResolvedValue(["notify-key", "job-1"] as never);
+        const brpopMock = vi.fn().mockResolvedValue(["notify-key", "job-1"] as never);
         mockRedis.brpop = brpopMock as Redis["brpop"];
 
         const result = await repository.fetchNext(5);
@@ -519,9 +519,9 @@ describe("Unit: DragonflyQueueRepository", () => {
 
     it("should handle fetchNext when rawData is not present", async () => {
         const jobId = "job-1";
-        (mockRedis.eval as jest.Mock).mockResolvedValue([jobId, null] as never);
+        (mockRedis.eval as Mock).mockResolvedValue([jobId, null] as never);
         const jobData = { data: JSON.stringify({ message: "test" }), priority: "1" };
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, jobData],
         ] as never);
@@ -531,8 +531,8 @@ describe("Unit: DragonflyQueueRepository", () => {
 
     it("should return null in processFetchResult if pipeline exec returns null (when no rawData)", async () => {
         const jobId = "job-no-rawdata-no-exec";
-        (mockRedis.eval as jest.Mock).mockResolvedValue([jobId, null] as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue(null as never);
+        (mockRedis.eval as Mock).mockResolvedValue([jobId, null] as never);
+        (mockPipeline.exec as Mock).mockResolvedValue(null as never);
 
         const job = await repository.fetchNext();
         expect(job).toBeNull();
@@ -546,8 +546,8 @@ describe("Unit: DragonflyQueueRepository", () => {
             progress: "50",
             state: "active",
         };
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, jobData],
         ] as never);
@@ -558,13 +558,13 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should return empty array when recoverStalledJobs Lua script returns null", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(null as never);
+        (mockRedis.eval as Mock).mockResolvedValue(null as never);
         const recoveredJobs = await repository.recoverStalledJobs();
         expect(recoveredJobs).toEqual([]);
     });
 
     it("should return 0 when promoteDelayedJobs Lua script returns null", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(null as never);
+        (mockRedis.eval as Mock).mockResolvedValue(null as never);
         const count = await repository.promoteDelayedJobs(50);
         expect(count).toBe(0);
     });
@@ -583,7 +583,7 @@ describe("Unit: DragonflyQueueRepository", () => {
 
         await repository.add(job, Date.now() + 5000, true);
 
-        const mockCall = (mockRedis.eval as jest.Mock).mock.calls[0] as unknown[];
+        const mockCall = (mockRedis.eval as Mock).mock.calls[0] as unknown[];
 
         expect(mockCall?.[8]).toBe("1");
     });
@@ -601,8 +601,8 @@ describe("Unit: DragonflyQueueRepository", () => {
             started_at: String(startedAt.getTime()),
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, jobDataWithStartedAt],
         ] as never);
@@ -621,7 +621,7 @@ describe("Unit: DragonflyQueueRepository", () => {
 
         await repository.markAsFailed(jobId, errorMsg, failedAt, nextAttempt);
 
-        expect((mockRedis.eval as jest.Mock).mock.calls[0]).toEqual(
+        expect((mockRedis.eval as Mock).mock.calls[0]).toEqual(
             expect.arrayContaining([
                 expect.any(String),
                 4,
@@ -638,17 +638,17 @@ describe("Unit: DragonflyQueueRepository", () => {
     });
 
     it("should use default limit when promoting delayed jobs with no arg", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(7 as never);
+        (mockRedis.eval as Mock).mockResolvedValue(7 as never);
         const count = await repository.promoteDelayedJobs();
         expect(count).toBe(7);
-        const mockCall = (mockRedis.eval as jest.Mock).mock.calls[0] as unknown[];
+        const mockCall = (mockRedis.eval as Mock).mock.calls[0] as unknown[];
         expect(mockCall?.[6]).toBe("50");
     });
 
     it("should return null in processFetchResult if hgetall returns an error (when no rawData)", async () => {
         const jobId = "job-hgetall-error";
-        (mockRedis.eval as jest.Mock).mockResolvedValue([jobId, null] as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue([jobId, null] as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [new Error("HGETALL failed"), null],
         ] as never);

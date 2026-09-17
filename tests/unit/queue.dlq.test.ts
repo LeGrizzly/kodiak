@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import type {
     IDLQRepository,
@@ -9,7 +9,7 @@ import { Queue } from "../../src/presentation/queue.js";
 
 describe("Unit: Queue DLQ Methods", () => {
     let queue: Queue<{ message: string }>;
-    let mockRepository: jest.Mocked<IQueueRepository<{ message: string }>>;
+    let mockRepository: Mocked<IQueueRepository<{ message: string }>>;
     let mockKodiak: Kodiak;
 
     const dummyJob: Job<{ message: string }> = {
@@ -25,8 +25,8 @@ describe("Unit: Queue DLQ Methods", () => {
 
     beforeEach(() => {
         const mockConnection = {
-            duplicate: jest.fn(() => mockConnection),
-            quit: jest.fn<() => Promise<string>>().mockResolvedValue("OK"),
+            duplicate: vi.fn(() => mockConnection),
+            quit: vi.fn<() => Promise<string>>().mockResolvedValue("OK"),
         };
 
         mockKodiak = {
@@ -35,33 +35,33 @@ describe("Unit: Queue DLQ Methods", () => {
         } as unknown as Kodiak;
 
         mockRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            fetchNextJobs: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest.fn(),
-            updateProgress: jest.fn(),
-            promoteDelayedJobs: jest
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            fetchNextJobs: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi.fn(),
+            updateProgress: vi.fn(),
+            promoteDelayedJobs: vi
                 .fn<IQueueRepository<{ message: string }>["promoteDelayedJobs"]>()
                 .mockResolvedValue(0 as never),
-            recoverStalledJobs: jest
+            recoverStalledJobs: vi
                 .fn<IQueueRepository<{ message: string }>["recoverStalledJobs"]>()
                 .mockResolvedValue([] as never),
-            extendLock: jest.fn(),
-            releaseJobs: jest.fn(),
-            getFailedCount: jest
+            extendLock: vi.fn(),
+            releaseJobs: vi.fn(),
+            getFailedCount: vi
                 .fn<IDLQRepository<{ message: string }>["getFailedCount"]>()
                 .mockResolvedValue(12 as never),
-            getFailedJobs: jest
+            getFailedJobs: vi
                 .fn<IDLQRepository<{ message: string }>["getFailedJobs"]>()
                 .mockResolvedValue([dummyJob] as never),
-            retryJob: jest
+            retryJob: vi
                 .fn<IDLQRepository<{ message: string }>["retryJob"]>()
                 .mockResolvedValue(true as never),
-            retryAllFailed: jest
+            retryAllFailed: vi
                 .fn<IDLQRepository<{ message: string }>["retryAllFailed"]>()
                 .mockResolvedValue(4 as never),
-            cleanFailed: jest
+            cleanFailed: vi
                 .fn<IDLQRepository<{ message: string }>["cleanFailed"]>()
                 .mockResolvedValue(8 as never),
         };

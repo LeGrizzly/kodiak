@@ -1,5 +1,5 @@
 import * as net from "node:net";
-import { describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, type Mock, vi } from "vitest";
 import {
     type IKodiakFrame,
     KODIAK_FRAME_MAGIC,
@@ -341,7 +341,7 @@ describe("Integration: KodiakTcpServer", () => {
     it("should fallback to given port if address is not an object", async () => {
         const server = new KodiakTcpServer();
         const underlyingServer = (server as unknown as { server: net.Server }).server;
-        jest.spyOn(underlyingServer, "address").mockReturnValueOnce("pipe-address" as never);
+        vi.spyOn(underlyingServer, "address").mockReturnValueOnce("pipe-address" as never);
 
         const port = await server.listen(0);
         expect(port).toBe(0);
@@ -352,24 +352,22 @@ describe("Integration: KodiakTcpServer", () => {
     it("should use default port 7443 and host 127.0.0.1 when listen has no arguments", async () => {
         const server = new KodiakTcpServer();
         const underlyingServer = (server as unknown as { server: net.Server }).server;
-        const listenSpy = jest
+        const listenSpy = vi
             .spyOn(underlyingServer, "listen")
             .mockImplementation((...args: unknown[]) => {
                 const cb = args.find((a) => typeof a === "function") as () => void;
                 if (cb) cb();
                 return underlyingServer;
             });
-        const closeSpy = jest
-            .spyOn(underlyingServer, "close")
-            .mockImplementation((cb?: unknown) => {
-                const callback = cb as (err?: Error) => void;
-                if (callback) callback();
-                return underlyingServer;
-            });
+        const closeSpy = vi.spyOn(underlyingServer, "close").mockImplementation((cb?: unknown) => {
+            const callback = cb as (err?: Error) => void;
+            if (callback) callback();
+            return underlyingServer;
+        });
 
         const port = await server.listen();
         expect(port).toBe(7443);
-        expect(listenSpy as unknown as jest.Mock).toHaveBeenCalledWith(
+        expect(listenSpy as unknown as Mock).toHaveBeenCalledWith(
             7443,
             "127.0.0.1",
             expect.any(Function),
@@ -382,7 +380,7 @@ describe("Integration: KodiakTcpServer", () => {
 
     it("should handle timerInterval without unref method", async () => {
         const server = new KodiakTcpServer();
-        const intervalSpy = jest
+        const intervalSpy = vi
             .spyOn(global, "setInterval")
             .mockReturnValueOnce(999 as unknown as NodeJS.Timeout);
 

@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
 import { Redis } from "ioredis";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import { DragonflyQueueRepository } from "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js";
 

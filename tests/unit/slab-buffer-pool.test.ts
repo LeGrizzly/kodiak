@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import { SlabBufferPool } from "../../src/infrastructure/memory/slab-buffer-pool.js";
 
 describe("SlabBufferPool", () => {

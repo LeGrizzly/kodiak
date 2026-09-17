@@ -1,44 +1,49 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import { beforeEach, describe, expect, it, type MockedFunction, vi } from "vitest";
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
-const mockFetchExecute = jest.fn();
-const mockCompleteExecute = jest.fn();
-const mockFailExecute = jest.fn();
-const mockExtendLock = jest.fn().mockResolvedValue(true as never);
-const mockReleaseJobs = jest.fn().mockResolvedValue(undefined as never);
+const mockFetchExecute = vi.fn();
+const mockCompleteExecute = vi.fn();
+const mockFailExecute = vi.fn();
+const mockExtendLock = vi.fn().mockResolvedValue(true as never);
+const mockReleaseJobs = vi.fn().mockResolvedValue(undefined as never);
 
-jest.unstable_mockModule(
-    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
-    () => ({
-        DragonflyQueueRepository: jest
-            .fn()
-            .mockImplementation((_name, _conn, _pfx, _ser, _pipe, limiter) => ({
-                updateProgress: jest.fn().mockResolvedValue(undefined as never),
+vi.doMock("../../src/infrastructure/dragonfly/dragonfly-queue.repository.js", () => ({
+    DragonflyQueueRepository: vi.fn(
+        function MockDragonflyQueueRepository(_name, _conn, _pfx, _ser, _pipe, limiter) {
+            return {
+                updateProgress: vi.fn().mockResolvedValue(undefined as never),
                 fetchNextJobs: mockFetchExecute,
                 releaseJobs: mockReleaseJobs,
                 extendLock: mockExtendLock,
                 rateLimiter: limiter,
-            })),
+            };
+        },
+    ),
+}));
+
+vi.doMock("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
+    FetchJobsUseCase: vi.fn(function MockFetchJobsUseCase() {
+        return {
+            execute: mockFetchExecute,
+        };
     }),
-);
-
-jest.unstable_mockModule("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
-    FetchJobsUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockFetchExecute,
-    })),
 }));
 
-jest.unstable_mockModule("../../src/application/use-cases/complete-job.use-case.js", () => ({
-    CompleteJobUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockCompleteExecute,
-    })),
+vi.doMock("../../src/application/use-cases/complete-job.use-case.js", () => ({
+    CompleteJobUseCase: vi.fn(function MockCompleteJobUseCase() {
+        return {
+            execute: mockCompleteExecute,
+        };
+    }),
 }));
 
-jest.unstable_mockModule("../../src/application/use-cases/fail-job.use-case.js", () => ({
-    FailJobUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockFailExecute,
-    })),
+vi.doMock("../../src/application/use-cases/fail-job.use-case.js", () => ({
+    FailJobUseCase: vi.fn(function MockFailJobUseCase() {
+        return {
+            execute: mockFailExecute,
+        };
+    }),
 }));
 
 const { Worker } = await import("../../src/presentation/worker.js");
@@ -48,22 +53,22 @@ const { DragonflyQueueRepository } = await import(
 
 describe("Unit: Worker Rate Limiting Integration", () => {
     let mockKodiak: Kodiak;
-    let processor: jest.MockedFunction<(job: unknown) => Promise<void>>;
+    let processor: MockedFunction<(job: unknown) => Promise<void>>;
 
     beforeEach(() => {
         const mockRedisConnection = {
-            duplicate: jest.fn().mockReturnThis(),
-            quit: jest.fn(),
-            disconnect: jest.fn(),
-            brpop: jest.fn(),
+            duplicate: vi.fn().mockReturnThis(),
+            quit: vi.fn(),
+            disconnect: vi.fn(),
+            brpop: vi.fn(),
         };
         mockKodiak = {
             connection: mockRedisConnection as unknown as Redis,
             prefix: "kodiak-test",
         } as unknown as Kodiak;
-        processor = jest.fn() as jest.MockedFunction<(job: unknown) => Promise<void>>;
+        processor = vi.fn() as MockedFunction<(job: unknown) => Promise<void>>;
 
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it("should pass rateLimiter options to DragonflyQueueRepository", () => {
@@ -92,7 +97,7 @@ describe("Unit: Worker Rate Limiting Integration", () => {
         // Simulate rate limiter returning empty jobs
         mockFetchExecute.mockResolvedValueOnce([] as never);
 
-        const rateLimitedListener = jest.fn();
+        const rateLimitedListener = vi.fn();
         worker.on("rateLimited", rateLimitedListener);
 
         const job = await worker.getJob(0, "worker:0");
