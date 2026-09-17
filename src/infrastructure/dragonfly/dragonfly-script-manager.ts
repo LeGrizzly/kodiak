@@ -17,7 +17,9 @@ export type ScriptName =
     | "extend_lock"
     | "update_progress"
     | "move_job"
-    | "release_jobs";
+    | "release_jobs"
+    | "retry_failed_job"
+    | "clean_failed_jobs";
 
 interface ScriptEntry {
     code: string;
@@ -56,6 +58,8 @@ export class DragonflyScriptManager {
             "update_progress",
             "move_job",
             "release_jobs",
+            "retry_failed_job",
+            "clean_failed_jobs",
         ];
 
         const searchDirs = [

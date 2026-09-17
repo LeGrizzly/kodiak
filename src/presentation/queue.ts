@@ -1,8 +1,12 @@
 import { EventEmitter } from "node:events";
 import type { JobOptions } from "../application/dtos/job-options.dto.js";
 import { AddJobUseCase } from "../application/use-cases/add-job.use-case.js";
+import { CleanFailedJobsUseCase } from "../application/use-cases/clean-failed-jobs.use-case.js";
+import { GetFailedCountUseCase } from "../application/use-cases/get-failed-count.use-case.js";
+import { GetFailedJobsUseCase } from "../application/use-cases/get-failed-jobs.use-case.js";
+import { RetryFailedJobUseCase } from "../application/use-cases/retry-failed-job.use-case.js";
 import type { Job } from "../domain/entities/job.entity.js";
-import type { IQueueRepository } from "../domain/repositories/queue.repository.js";
+import type { IDLQRepository, IQueueRepository } from "../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
 import {
     DragonflyQueueRepository,
@@ -12,6 +16,10 @@ import type { Kodiak } from "./kodiak.js";
 
 export class Queue<T> extends EventEmitter {
     private readonly addJobUseCase: AddJobUseCase<T>;
+    private readonly getFailedCountUseCase: GetFailedCountUseCase<T>;
+    private readonly getFailedJobsUseCase: GetFailedJobsUseCase<T>;
+    private readonly retryFailedJobUseCase: RetryFailedJobUseCase<T>;
+    private readonly cleanFailedJobsUseCase: CleanFailedJobsUseCase<T>;
     private readonly queueRepository: IQueueRepository<T>;
     private schedulerInterval: NodeJS.Timeout | null = null;
     private recoveringStalledJobs = false;
@@ -39,12 +47,37 @@ export class Queue<T> extends EventEmitter {
             );
 
         this.addJobUseCase = new AddJobUseCase<T>(this.queueRepository);
+        const dlqRepo = this.queueRepository as unknown as IDLQRepository<T>;
+        this.getFailedCountUseCase = new GetFailedCountUseCase<T>(dlqRepo);
+        this.getFailedJobsUseCase = new GetFailedJobsUseCase<T>(dlqRepo);
+        this.retryFailedJobUseCase = new RetryFailedJobUseCase<T>(dlqRepo);
+        this.cleanFailedJobsUseCase = new CleanFailedJobsUseCase<T>(dlqRepo);
 
         this.startScheduler();
     }
 
     public async add(id: string, data: T, options?: JobOptions): Promise<Job<T>> {
         return this.addJobUseCase.execute(id, data, options);
+    }
+
+    public async getFailedCount(): Promise<number> {
+        return this.getFailedCountUseCase.execute();
+    }
+
+    public async getFailedJobs(start = 0, limit = 20): Promise<Job<T>[]> {
+        return this.getFailedJobsUseCase.execute(start, limit);
+    }
+
+    public async retryJob(jobId: string): Promise<boolean> {
+        return this.retryFailedJobUseCase.execute(jobId);
+    }
+
+    public async retryAllFailed(limit = 100): Promise<number> {
+        return this.retryFailedJobUseCase.executeAll(limit);
+    }
+
+    public async cleanFailed(olderThanMs = 0): Promise<number> {
+        return this.cleanFailedJobsUseCase.execute(olderThanMs);
     }
 
     public async close(): Promise<void> {

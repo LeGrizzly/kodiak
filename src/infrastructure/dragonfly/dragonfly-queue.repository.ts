@@ -2,6 +2,7 @@ import type { Redis } from "ioredis";
 import type { Job, JobErrorInfo, JobStatus } from "../../domain/entities/job.entity.js";
 import type {
     BatchCompletedJob,
+    IDLQRepository,
     IQueueRepository,
 } from "../../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
@@ -31,7 +32,7 @@ interface PendingComplete {
     reject: (err: Error) => void;
 }
 
-export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
+export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRepository<T> {
     public readonly queueName: string;
     private readonly redisClient: Redis;
     private readonly keyTopology: DragonflyKeyTopology;
@@ -558,6 +559,82 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
             [jobId, String(lockExpiresAt), ownerToken ?? ""],
         );
         return Number(res) === 1;
+    }
+
+    public async getFailedCount(): Promise<number> {
+        return this.redisClient.zcard(this.keyTopology.deadKey);
+    }
+
+    public async getFailedJobs(start = 0, limit = 20): Promise<Job<T>[]> {
+        const stop = start + limit - 1;
+        const jobIds = await this.redisClient.zrevrange(this.keyTopology.deadKey, start, stop);
+        if (!jobIds || jobIds.length === 0) return [];
+
+        const pipeline = this.redisClient.pipeline();
+        for (const jobId of jobIds) {
+            pipeline.hgetall(this.keyTopology.jobKey(jobId));
+        }
+
+        const results = await pipeline.exec();
+        if (!results) return [];
+
+        const now = Date.now();
+        const jobs: Job<T>[] = [];
+        for (let i = 0; i < results.length; i++) {
+            const entry = results[i];
+            if (!entry) continue;
+            const [err, record] = entry as [Error | null, Record<string, string>];
+            const jobId = jobIds[i];
+            if (!err && record && jobId) {
+                const job = this.buildJobFromRecord(jobId, record, now);
+                if (job) jobs.push(job);
+            }
+        }
+        return jobs;
+    }
+
+    public async retryJob(jobId: string): Promise<boolean> {
+        const jobKey = this.keyTopology.jobKey(jobId);
+        const now = Date.now();
+        const res = await this.scriptManager.execute(
+            this.redisClient,
+            "retry_failed_job",
+            [
+                this.keyTopology.deadKey,
+                this.keyTopology.waitingKey,
+                this.keyTopology.notifyKey,
+                jobKey,
+            ],
+            [jobId, String(now)],
+        );
+        return Number(res) === 1;
+    }
+
+    public async retryAllFailed(limit = 100): Promise<number> {
+        const jobIds = await this.redisClient.zrange(
+            this.keyTopology.deadKey,
+            0,
+            String(limit - 1),
+        );
+        if (!jobIds || jobIds.length === 0) return 0;
+
+        let retriedCount = 0;
+        for (const jobId of jobIds) {
+            const success = await this.retryJob(jobId);
+            if (success) retriedCount++;
+        }
+        return retriedCount;
+    }
+
+    public async cleanFailed(olderThanMs = 0): Promise<number> {
+        const maxTimestamp = olderThanMs > 0 ? String(Date.now() - olderThanMs) : "+inf";
+        const res = await this.scriptManager.execute(
+            this.redisClient,
+            "clean_failed_jobs",
+            [this.keyTopology.deadKey],
+            [maxTimestamp, this.keyTopology.jobKeyPrefix, "500"],
+        );
+        return Number(res) || 0;
     }
 
     private buildJobFromRaw(jobId: string, raw: string[] | null, now: number): Job<T> | null {

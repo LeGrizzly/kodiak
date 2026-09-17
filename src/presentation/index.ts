@@ -18,6 +18,10 @@ export {
     CreditFlowController,
     type CreditFlowControllerOptions,
 } from "../application/flow-control/credit-flow-controller.js";
+export { CleanFailedJobsUseCase } from "../application/use-cases/clean-failed-jobs.use-case.js";
+export { GetFailedCountUseCase } from "../application/use-cases/get-failed-count.use-case.js";
+export { GetFailedJobsUseCase } from "../application/use-cases/get-failed-jobs.use-case.js";
+export { RetryFailedJobUseCase } from "../application/use-cases/retry-failed-job.use-case.js";
 export type {
     BackoffStrategyType,
     Job,
@@ -36,6 +40,7 @@ export {
 } from "../domain/protocol/kodiak-frame.entity.js";
 export type {
     BatchCompletedJob,
+    IDLQRepository,
     IQueueRepository,
 } from "../domain/repositories/queue.repository.js";
 export type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";

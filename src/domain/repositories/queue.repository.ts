@@ -6,7 +6,15 @@ export interface BatchCompletedJob {
     ownerToken?: string;
 }
 
-export interface IQueueRepository<T> {
+export interface IDLQRepository<T> {
+    getFailedCount(): Promise<number>;
+    getFailedJobs(start?: number, limit?: number): Promise<Job<T>[]>;
+    retryJob(jobId: string): Promise<boolean>;
+    retryAllFailed(limit?: number): Promise<number>;
+    cleanFailed(olderThanMs?: number): Promise<number>;
+}
+
+export interface IQueueRepository<T> extends Partial<IDLQRepository<T>> {
     add(job: Job<T>, score: number, isDelayed: boolean): Promise<void>;
     fetchNext(timeout?: number): Promise<Job<T> | null>;
     fetchNextJobs(count: number, lockDuration: number, ownerToken?: string): Promise<Job<T>[]>;
