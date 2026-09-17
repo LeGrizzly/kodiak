@@ -22,6 +22,8 @@ describe("Index Exports", () => {
         expect(KodiakIndex.KODIAK_FRAME_MAGIC).toBeDefined();
         expect(KodiakIndex.KODIAK_HEADER_SIZE).toBeDefined();
         expect(KodiakIndex.KodiakOpCode).toBeDefined();
+        expect(KodiakIndex.ConsumeRateLimitUseCase).toBeDefined();
+        expect(KodiakIndex.GetRateLimitStatusUseCase).toBeDefined();
     });
 
     it("should export all dragonfly infrastructure classes", () => {

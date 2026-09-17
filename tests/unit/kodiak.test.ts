@@ -207,6 +207,25 @@ describe("Kodiak Facade", () => {
         });
     });
 
+    it("should inherit rateLimiter from queue configuration when creating worker", () => {
+        const kodiak = new Kodiak({
+            connection: { host: "localhost", port: 6379 },
+        });
+
+        const rateLimiter = { max: 10, duration: 1000, burst: 20 };
+        kodiak.createQueue("rate-limited-queue", { rateLimiter });
+
+        const processor: WorkerProcessor<unknown> = jest.fn(async () => {});
+        kodiak.createWorker("rate-limited-queue", processor, { concurrency: 3 });
+
+        expect(mockWorkerConstructor).toHaveBeenCalledWith(
+            "rate-limited-queue",
+            processor,
+            kodiak,
+            { concurrency: 3, rateLimiter },
+        );
+    });
+
     it("should close dragonflyConnection on close()", async () => {
         const kodiak = new Kodiak({
             connection: { host: "localhost", port: 6379 },

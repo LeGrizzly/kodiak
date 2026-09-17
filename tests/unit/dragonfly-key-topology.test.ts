@@ -12,6 +12,7 @@ describe("DragonflyKeyTopology", () => {
         expect(topology.delayedKey).toBe("{kodiak:orders}:delayed");
         expect(topology.notifyKey).toBe("{kodiak:orders}:notify");
         expect(topology.deadKey).toBe("{kodiak:orders}:dead");
+        expect(topology.rateLimitKey).toBe("{kodiak:orders}:ratelimit");
         expect(topology.jobKeyPrefix).toBe("{kodiak:orders}:jobs:");
         expect(topology.jobKey("job-123")).toBe("{kodiak:orders}:jobs:job-123");
     });
