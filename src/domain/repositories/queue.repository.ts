@@ -14,7 +14,21 @@ export interface IDLQRepository<T> {
     cleanFailed(olderThanMs?: number): Promise<number>;
 }
 
-export interface IQueueRepository<T> extends Partial<IDLQRepository<T>> {
+export interface IRateLimitStatus {
+    tokens: number;
+    max: number;
+    duration: number;
+    resetAt?: Date;
+}
+
+export interface IRateLimiterRepository {
+    consumeRateLimit(count: number): Promise<boolean>;
+    getRateLimitStatus(): Promise<IRateLimitStatus | null>;
+}
+
+export interface IQueueRepository<T>
+    extends Partial<IDLQRepository<T>>,
+        Partial<IRateLimiterRepository> {
     add(job: Job<T>, score: number, isDelayed: boolean): Promise<void>;
     fetchNext(timeout?: number): Promise<Job<T> | null>;
     fetchNextJobs(count: number, lockDuration: number, ownerToken?: string): Promise<Job<T>[]>;

@@ -1,9 +1,12 @@
 import type { Redis } from "ioredis";
+import type { RateLimiterOptions } from "../../application/dtos/rate-limiter-options.dto.js";
 import type { Job, JobErrorInfo, JobStatus } from "../../domain/entities/job.entity.js";
 import type {
     BatchCompletedJob,
     IDLQRepository,
     IQueueRepository,
+    IRateLimiterRepository,
+    IRateLimitStatus,
 } from "../../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
 import { MsgpackJobSerializer } from "../serializers/msgpack-job.serializer.js";
@@ -32,13 +35,16 @@ interface PendingComplete {
     reject: (err: Error) => void;
 }
 
-export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRepository<T> {
+export class DragonflyQueueRepository<T>
+    implements IQueueRepository<T>, IDLQRepository<T>, IRateLimiterRepository
+{
     public readonly queueName: string;
     private readonly redisClient: Redis;
     private readonly keyTopology: DragonflyKeyTopology;
     private readonly scriptManager: DragonflyScriptManager;
     private readonly serializer: IJobSerializer;
     private readonly pipelining?: PipeliningOptions;
+    private readonly rateLimiter?: RateLimiterOptions;
     private readonly pendingAdds: PendingAdd<T>[] = [];
     private readonly pendingCompletes: PendingComplete[] = [];
     private pipelineFlushScheduled = false;
@@ -50,6 +56,7 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRep
         prefix = "kodiak",
         serializer?: IJobSerializer,
         pipelining?: PipeliningOptions,
+        rateLimiter?: RateLimiterOptions,
     ) {
         this.queueName = queueName;
         this.redisClient = "getRawClient" in connection ? connection.getRawClient() : connection;
@@ -57,6 +64,7 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRep
         this.scriptManager = DragonflyScriptManager.getInstance();
         this.serializer = serializer ?? new MsgpackJobSerializer();
         this.pipelining = pipelining;
+        this.rateLimiter = rateLimiter;
     }
 
     public async add(job: Job<T>, score: number, isDelayed: boolean): Promise<void> {
@@ -237,6 +245,16 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRep
     }
 
     public async fetchNext(timeout?: number): Promise<Job<T> | null> {
+        if (this.rateLimiter) {
+            const allowed = await this.consumeRateLimit(1);
+            if (!allowed) {
+                if (this.rateLimiter.onExceeded !== "reject") {
+                    await this.moveWaitingToDelayedWithDelay(this.rateLimiter.retryDelay ?? 500);
+                }
+                return null;
+            }
+        }
+
         const now = Date.now();
         const rawOptimistic = await this.scriptManager.execute(
             this.redisClient,
@@ -325,6 +343,16 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRep
         lockDuration: number,
         ownerToken?: string,
     ): Promise<Job<T>[]> {
+        if (this.rateLimiter) {
+            const allowed = await this.consumeRateLimit(count);
+            if (!allowed) {
+                if (this.rateLimiter.onExceeded !== "reject") {
+                    await this.moveWaitingToDelayedWithDelay(this.rateLimiter.retryDelay ?? 500);
+                }
+                return [];
+            }
+        }
+
         const now = Date.now();
         const lockExpiresAt = now + lockDuration;
 
@@ -685,5 +713,76 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T>, IDLQRep
                 await this.updateProgress(jobId, progress);
             },
         };
+    }
+
+    public async consumeRateLimit(count = 1): Promise<boolean> {
+        if (!this.rateLimiter) return true;
+        const now = Date.now();
+        const max = this.rateLimiter.max ?? this.rateLimiter.rate ?? 100;
+        const duration = this.rateLimiter.duration ?? 1000;
+        const capacity = this.rateLimiter.burst ?? this.rateLimiter.capacity ?? max;
+        const refillRatePerMs = max / duration;
+
+        const raw = await this.scriptManager.execute(
+            this.redisClient,
+            "token_bucket",
+            [this.keyTopology.rateLimitKey],
+            [String(capacity), String(refillRatePerMs), String(now), String(count)],
+        );
+
+        if (Array.isArray(raw)) {
+            return Number(raw[0]) === 1;
+        }
+        return Number(raw) === 1;
+    }
+
+    public async getRateLimitStatus(): Promise<IRateLimitStatus | null> {
+        if (!this.rateLimiter) return null;
+        const now = Date.now();
+        const max = this.rateLimiter.max ?? this.rateLimiter.rate ?? 100;
+        const duration = this.rateLimiter.duration ?? 1000;
+        const capacity = this.rateLimiter.burst ?? this.rateLimiter.capacity ?? max;
+        const refillRatePerMs = max / duration;
+
+        const raw = await this.scriptManager.execute(
+            this.redisClient,
+            "token_bucket",
+            [this.keyTopology.rateLimitKey],
+            [String(capacity), String(refillRatePerMs), String(now), "0"],
+        );
+
+        let tokens = capacity;
+        let delayNeededMs = 0;
+        if (Array.isArray(raw)) {
+            tokens = Number(raw[1]);
+            delayNeededMs = Number(raw[2]);
+        }
+
+        return {
+            tokens,
+            max: capacity,
+            duration,
+            resetAt: delayNeededMs > 0 ? new Date(now + delayNeededMs) : new Date(now),
+        };
+    }
+
+    private async moveWaitingToDelayedWithDelay(delayMs: number): Promise<string | null> {
+        try {
+            const now = Date.now();
+            const nextAttempt = now + Math.max(0, delayMs);
+            const res = await this.scriptManager.execute(
+                this.redisClient,
+                "move_waiting_to_delayed",
+                [this.keyTopology.waitingKey, this.keyTopology.delayedKey],
+                [String(nextAttempt)],
+            );
+            if (!res) return null;
+            if (Array.isArray(res) && res[0]) {
+                return String(res[0]);
+            }
+            return String(res);
+        } catch {
+            return null;
+        }
     }
 }

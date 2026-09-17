@@ -19,7 +19,9 @@ export type ScriptName =
     | "move_job"
     | "release_jobs"
     | "retry_failed_job"
-    | "clean_failed_jobs";
+    | "clean_failed_jobs"
+    | "token_bucket"
+    | "move_waiting_to_delayed";
 
 interface ScriptEntry {
     code: string;
@@ -60,6 +62,8 @@ export class DragonflyScriptManager {
             "release_jobs",
             "retry_failed_job",
             "clean_failed_jobs",
+            "token_bucket",
+            "move_waiting_to_delayed",
         ];
 
         const searchDirs = [

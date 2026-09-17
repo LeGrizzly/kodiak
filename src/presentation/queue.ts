@@ -1,12 +1,21 @@
 import { EventEmitter } from "node:events";
 import type { JobOptions } from "../application/dtos/job-options.dto.js";
+import type { QueueOptions } from "../application/dtos/queue-options.dto.js";
+import type { RateLimiterOptions } from "../application/dtos/rate-limiter-options.dto.js";
 import { AddJobUseCase } from "../application/use-cases/add-job.use-case.js";
 import { CleanFailedJobsUseCase } from "../application/use-cases/clean-failed-jobs.use-case.js";
+import { ConsumeRateLimitUseCase } from "../application/use-cases/consume-rate-limit.use-case.js";
 import { GetFailedCountUseCase } from "../application/use-cases/get-failed-count.use-case.js";
 import { GetFailedJobsUseCase } from "../application/use-cases/get-failed-jobs.use-case.js";
+import { GetRateLimitStatusUseCase } from "../application/use-cases/get-rate-limit-status.use-case.js";
 import { RetryFailedJobUseCase } from "../application/use-cases/retry-failed-job.use-case.js";
 import type { Job } from "../domain/entities/job.entity.js";
-import type { IDLQRepository, IQueueRepository } from "../domain/repositories/queue.repository.js";
+import type {
+    IDLQRepository,
+    IQueueRepository,
+    IRateLimiterRepository,
+    IRateLimitStatus,
+} from "../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
 import {
     DragonflyQueueRepository,
@@ -20,6 +29,8 @@ export class Queue<T> extends EventEmitter {
     private readonly getFailedJobsUseCase: GetFailedJobsUseCase<T>;
     private readonly retryFailedJobUseCase: RetryFailedJobUseCase<T>;
     private readonly cleanFailedJobsUseCase: CleanFailedJobsUseCase<T>;
+    private readonly consumeRateLimitUseCase: ConsumeRateLimitUseCase;
+    private readonly getRateLimitStatusUseCase: GetRateLimitStatusUseCase;
     private readonly queueRepository: IQueueRepository<T>;
     private schedulerInterval: NodeJS.Timeout | null = null;
     private recoveringStalledJobs = false;
@@ -29,10 +40,28 @@ export class Queue<T> extends EventEmitter {
         public readonly name: string,
         private readonly kodiak: Kodiak,
         repository?: IQueueRepository<T>,
-        serializer?: IJobSerializer,
+        serializerOrOptions?: IJobSerializer | QueueOptions,
         pipelining?: PipeliningOptions,
+        rateLimiter?: RateLimiterOptions,
     ) {
         super();
+
+        let serializer: IJobSerializer | undefined;
+        let pipeOpts: PipeliningOptions | undefined = pipelining;
+        let limiterOpts: RateLimiterOptions | undefined = rateLimiter;
+
+        if (
+            serializerOrOptions &&
+            typeof serializerOrOptions === "object" &&
+            !("serialize" in serializerOrOptions)
+        ) {
+            serializer = serializerOrOptions.serializer;
+            pipeOpts = serializerOrOptions.pipelining ?? pipeOpts;
+            limiterOpts =
+                serializerOrOptions.rateLimiter ?? serializerOrOptions.limiter ?? limiterOpts;
+        } else if (serializerOrOptions && "serialize" in serializerOrOptions) {
+            serializer = serializerOrOptions;
+        }
 
         const conn = this.kodiak.connection.duplicate();
         this.connection = conn;
@@ -43,7 +72,8 @@ export class Queue<T> extends EventEmitter {
                 conn,
                 this.kodiak.prefix,
                 serializer ?? this.kodiak.serializer,
-                pipelining ?? this.kodiak.pipelining,
+                pipeOpts ?? this.kodiak.pipelining,
+                limiterOpts,
             );
 
         this.addJobUseCase = new AddJobUseCase<T>(this.queueRepository);
@@ -52,6 +82,10 @@ export class Queue<T> extends EventEmitter {
         this.getFailedJobsUseCase = new GetFailedJobsUseCase<T>(dlqRepo);
         this.retryFailedJobUseCase = new RetryFailedJobUseCase<T>(dlqRepo);
         this.cleanFailedJobsUseCase = new CleanFailedJobsUseCase<T>(dlqRepo);
+
+        const rateLimitRepo = this.queueRepository as unknown as IRateLimiterRepository;
+        this.consumeRateLimitUseCase = new ConsumeRateLimitUseCase(rateLimitRepo);
+        this.getRateLimitStatusUseCase = new GetRateLimitStatusUseCase(rateLimitRepo);
 
         this.startScheduler();
     }
@@ -78,6 +112,14 @@ export class Queue<T> extends EventEmitter {
 
     public async cleanFailed(olderThanMs = 0): Promise<number> {
         return this.cleanFailedJobsUseCase.execute(olderThanMs);
+    }
+
+    public async consumeRateLimit(count = 1): Promise<boolean> {
+        return this.consumeRateLimitUseCase.execute(count);
+    }
+
+    public async getRateLimitStatus(): Promise<IRateLimitStatus | null> {
+        return this.getRateLimitStatusUseCase.execute();
     }
 
     public async close(): Promise<void> {

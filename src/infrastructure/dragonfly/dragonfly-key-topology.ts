@@ -33,6 +33,10 @@ export class DragonflyKeyTopology {
         return `${this.hashtag}:dead`;
     }
 
+    public get rateLimitKey(): string {
+        return `${this.hashtag}:ratelimit`;
+    }
+
     public get jobKeyPrefix(): string {
         return `${this.hashtag}:jobs:`;
     }

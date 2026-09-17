@@ -88,12 +88,27 @@ export class Worker<T> extends EventEmitter {
         this.blockingConnection = blkConn;
 
         const serializer = opts?.serializer ?? kodiak.serializer;
+        const rateLimiter = opts?.rateLimiter ?? opts?.limiter;
         this.ackQueueRepository =
             repositories?.ack ??
-            new DragonflyQueueRepository<T>(name, ackConn, kodiak.prefix, serializer);
+            new DragonflyQueueRepository<T>(
+                name,
+                ackConn,
+                kodiak.prefix,
+                serializer,
+                undefined,
+                rateLimiter,
+            );
         const blockingRepo =
             repositories?.blocking ??
-            new DragonflyQueueRepository<T>(name, blkConn, kodiak.prefix, serializer);
+            new DragonflyQueueRepository<T>(
+                name,
+                blkConn,
+                kodiak.prefix,
+                serializer,
+                undefined,
+                rateLimiter,
+            );
 
         this.workerId = `${process.pid}-${randomUUID()}`;
         this.fetchJobsUseCase = new FetchJobsUseCase<T>(blockingRepo);
@@ -243,7 +258,10 @@ export class Worker<T> extends EventEmitter {
                 return null;
             }
             const desired = this.prefetchManager.getSize();
-            const grantedCredits = this.creditController.consume(desired);
+            const rateLimiter = this.opts?.rateLimiter ?? this.opts?.limiter;
+            const burstCapacity = rateLimiter?.burst ?? rateLimiter?.capacity ?? rateLimiter?.max;
+            const effectiveDesired = burstCapacity ? Math.min(desired, burstCapacity) : desired;
+            const grantedCredits = this.creditController.consume(effectiveDesired);
             if (grantedCredits <= 0) {
                 return null;
             }
@@ -265,6 +283,10 @@ export class Worker<T> extends EventEmitter {
 
             if (fetchedCount < grantedCredits) {
                 this.creditController.replenish(grantedCredits - fetchedCount);
+            }
+
+            if (fetchedCount === 0 && rateLimiter) {
+                this.emit("rateLimited", { requested: grantedCredits });
             }
 
             if (jobs && jobs.length > 0) {

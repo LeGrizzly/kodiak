@@ -9,6 +9,8 @@ export type {
     JobOptions,
     RepeatOptions,
 } from "../application/dtos/job-options.dto.js";
+export type { QueueOptions } from "../application/dtos/queue-options.dto.js";
+export type { RateLimiterOptions } from "../application/dtos/rate-limiter-options.dto.js";
 export type {
     AdaptivePrefetchOptions,
     WorkerAckPipeliningOptions,
@@ -19,8 +21,10 @@ export {
     type CreditFlowControllerOptions,
 } from "../application/flow-control/credit-flow-controller.js";
 export { CleanFailedJobsUseCase } from "../application/use-cases/clean-failed-jobs.use-case.js";
+export { ConsumeRateLimitUseCase } from "../application/use-cases/consume-rate-limit.use-case.js";
 export { GetFailedCountUseCase } from "../application/use-cases/get-failed-count.use-case.js";
 export { GetFailedJobsUseCase } from "../application/use-cases/get-failed-jobs.use-case.js";
+export { GetRateLimitStatusUseCase } from "../application/use-cases/get-rate-limit-status.use-case.js";
 export { RetryFailedJobUseCase } from "../application/use-cases/retry-failed-job.use-case.js";
 export type {
     BackoffStrategyType,
@@ -42,6 +46,8 @@ export type {
     BatchCompletedJob,
     IDLQRepository,
     IQueueRepository,
+    IRateLimiterRepository,
+    IRateLimitStatus,
 } from "../domain/repositories/queue.repository.js";
 export type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
 export type { BackoffStrategy } from "../domain/strategies/backoff.strategy.js";

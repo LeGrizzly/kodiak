@@ -1,5 +1,6 @@
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
 import type { BackoffStrategy } from "../../domain/strategies/backoff.strategy.js";
+import type { RateLimiterOptions } from "./rate-limiter-options.dto.js";
 
 export interface AdaptivePrefetchOptions {
     /**
@@ -187,4 +188,15 @@ export interface WorkerOptions {
      * Prevents worker memory saturation (OOM) by capping in-flight and prefetched jobs.
      */
     credits?: number | { maxCredits: number; replenishBatchThreshold?: number };
+
+    /**
+     * Rate limiter configuration for the worker.
+     * If specified, throttles job consumption according to the token-bucket algorithm.
+     */
+    rateLimiter?: RateLimiterOptions;
+
+    /**
+     * Alias for rateLimiter.
+     */
+    limiter?: RateLimiterOptions;
 }

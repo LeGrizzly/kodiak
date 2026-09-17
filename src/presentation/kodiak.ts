@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Redis, RedisOptions } from "ioredis";
 import type { JobOptions } from "../application/dtos/job-options.dto.js";
+import type { QueueOptions } from "../application/dtos/queue-options.dto.js";
 import type { WorkerOptions } from "../application/dtos/worker-options.dto.js";
 import type { Job } from "../domain/entities/job.entity.js";
 import type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
@@ -20,6 +21,7 @@ export interface KodiakOptions {
 
 export class Kodiak {
     private readonly dragonflyConnection: DragonflyConnection;
+    private readonly queueConfigs = new Map<string, QueueOptions>();
     public readonly connection: Redis;
     public readonly prefix: string;
     public readonly pipelining?: PipeliningOptions;
@@ -33,10 +35,21 @@ export class Kodiak {
         this.serializer = this.options.serializer ?? new MsgpackJobSerializer();
     }
 
-    public createQueue<T>(
-        name: string,
-        options?: { serializer?: IJobSerializer; pipelining?: PipeliningOptions },
-    ): Queue<T> {
+    public createQueue<T>(name: string, options?: QueueOptions): Queue<T> {
+        if (options) {
+            this.queueConfigs.set(name, options);
+        }
+        const limiter = options?.rateLimiter ?? options?.limiter;
+        if (limiter !== undefined) {
+            return new Queue<T>(
+                name,
+                this,
+                undefined,
+                options?.serializer ?? this.serializer,
+                options?.pipelining ?? this.pipelining,
+                limiter,
+            );
+        }
         return new Queue<T>(
             name,
             this,
@@ -51,7 +64,13 @@ export class Kodiak {
         processor: WorkerProcessor<T>,
         opts?: WorkerOptions,
     ): Worker<T> {
-        return new Worker<T>(name, processor, this, opts);
+        const queueConfig = this.queueConfigs.get(name);
+        const inheritedLimiter = queueConfig?.rateLimiter ?? queueConfig?.limiter;
+        const mergedOpts: WorkerOptions = {
+            ...opts,
+            rateLimiter: opts?.rateLimiter ?? opts?.limiter ?? inheritedLimiter,
+        };
+        return new Worker<T>(name, processor, this, mergedOpts);
     }
 
     public async push<T>(
