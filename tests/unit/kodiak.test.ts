@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
-import type { IJobSerializer } from "../src/domain/serializers/job-serializer.interface.js";
-import type { TaskDefinition } from "../src/presentation/task.js";
-import type { WorkerProcessor } from "../src/presentation/worker.js";
+import type { IJobSerializer } from "../../src/domain/serializers/job-serializer.interface.js";
+import type { TaskDefinition } from "../../src/presentation/task.js";
+import type { WorkerProcessor } from "../../src/presentation/worker.js";
 
 const mockQuit = jest.fn().mockResolvedValue(undefined as never);
 const mockRawClient = {
@@ -11,7 +11,7 @@ const mockRawClient = {
 } as unknown as Redis;
 const mockGetRawClient = jest.fn().mockReturnValue(mockRawClient);
 
-jest.unstable_mockModule("../src/infrastructure/dragonfly/dragonfly-connection.js", () => ({
+jest.unstable_mockModule("../../src/infrastructure/dragonfly/dragonfly-connection.js", () => ({
     DragonflyConnection: jest.fn().mockImplementation(() => ({
         getRawClient: mockGetRawClient,
         quit: mockQuit,
@@ -23,7 +23,7 @@ jest.unstable_mockModule("../src/infrastructure/dragonfly/dragonfly-connection.j
 const mockQueueAdd = jest.fn();
 const mockQueueClose = jest.fn().mockResolvedValue(undefined as never);
 const mockQueueConstructor = jest.fn();
-jest.unstable_mockModule("../src/presentation/queue.js", () => ({
+jest.unstable_mockModule("../../src/presentation/queue.js", () => ({
     Queue: jest.fn().mockImplementation((...args: unknown[]) => {
         mockQueueConstructor(...args);
         return {
@@ -34,7 +34,7 @@ jest.unstable_mockModule("../src/presentation/queue.js", () => ({
 }));
 
 const mockWorkerConstructor = jest.fn();
-jest.unstable_mockModule("../src/presentation/worker.js", () => ({
+jest.unstable_mockModule("../../src/presentation/worker.js", () => ({
     Worker: jest.fn().mockImplementation((...args: unknown[]) => {
         mockWorkerConstructor(...args);
         return {
@@ -44,9 +44,9 @@ jest.unstable_mockModule("../src/presentation/worker.js", () => ({
     }),
 }));
 
-const { Kodiak } = await import("../src/presentation/kodiak.js");
+const { Kodiak } = await import("../../src/presentation/kodiak.js");
 const { MsgpackJobSerializer } = await import(
-    "../src/infrastructure/serializers/msgpack-job.serializer.js"
+    "../../src/infrastructure/serializers/msgpack-job.serializer.js"
 );
 
 describe("Kodiak Facade", () => {
