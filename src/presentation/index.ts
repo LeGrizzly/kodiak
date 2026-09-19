@@ -32,6 +32,7 @@ export type {
     JobErrorInfo,
     JobStatus,
 } from "../domain/entities/job.entity.js";
+export { JobAlreadyExistsError } from "../domain/errors/job-already-exists.error.js";
 export type {
     BufferPoolStats,
     IBufferPool,
@@ -43,7 +44,9 @@ export {
     KodiakOpCode,
 } from "../domain/protocol/kodiak-frame.entity.js";
 export type {
+    AddJobResult,
     BatchCompletedJob,
+    DeduplicationOptions,
     IDLQRepository,
     IQueueRepository,
     IRateLimiterRepository,

@@ -26,10 +26,26 @@ export interface IRateLimiterRepository {
     getRateLimitStatus(): Promise<IRateLimitStatus | null>;
 }
 
+export interface AddJobResult {
+    isDuplicate: boolean;
+    jobId: string;
+}
+
+export interface DeduplicationOptions {
+    id?: string;
+    ttl?: number;
+    strategy?: "ignore-if-exists" | "throw";
+}
+
 export interface IQueueRepository<T>
     extends Partial<IDLQRepository<T>>,
         Partial<IRateLimiterRepository> {
-    add(job: Job<T>, score: number, isDelayed: boolean): Promise<void>;
+    add(
+        job: Job<T>,
+        score: number,
+        isDelayed: boolean,
+        deduplication?: { id: string; ttl: number },
+    ): Promise<AddJobResult | void>;
     fetchNext(timeout?: number): Promise<Job<T> | null>;
     fetchNextJobs(count: number, lockDuration: number, ownerToken?: string): Promise<Job<T>[]>;
     markAsCompleted(jobId: string, completedAt: Date, ownerToken?: string): Promise<void>;
@@ -47,4 +63,5 @@ export interface IQueueRepository<T>
     recoverStalledJobs(): Promise<string[]>;
     extendLock(jobId: string, lockExpiresAt: number, ownerToken?: string): Promise<boolean>;
     releaseJobs(jobIds: string[]): Promise<void>;
+    deleteDeduplicationKey?(dedupId: string): Promise<boolean>;
 }

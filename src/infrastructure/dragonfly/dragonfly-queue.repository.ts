@@ -2,6 +2,7 @@ import type { Redis } from "ioredis";
 import type { RateLimiterOptions } from "../../application/dtos/rate-limiter-options.dto.js";
 import type { Job, JobErrorInfo, JobStatus } from "../../domain/entities/job.entity.js";
 import type {
+    AddJobResult,
     BatchCompletedJob,
     IDLQRepository,
     IQueueRepository,
@@ -23,7 +24,8 @@ interface PendingAdd<T> {
     job: Job<T>;
     score: number;
     isDelayed: boolean;
-    resolve: () => void;
+    deduplication?: { id: string; ttl: number };
+    resolve: (result: AddJobResult) => void;
     reject: (err: Error) => void;
 }
 
@@ -67,10 +69,15 @@ export class DragonflyQueueRepository<T>
         this.rateLimiter = rateLimiter;
     }
 
-    public async add(job: Job<T>, score: number, isDelayed: boolean): Promise<void> {
+    public async add(
+        job: Job<T>,
+        score: number,
+        isDelayed: boolean,
+        deduplication?: { id: string; ttl: number },
+    ): Promise<AddJobResult> {
         if (this.pipelining) {
-            return new Promise<void>((resolve, reject) => {
-                this.pendingAdds.push({ job, score, isDelayed, resolve, reject });
+            return new Promise<AddJobResult>((resolve, reject) => {
+                this.pendingAdds.push({ job, score, isDelayed, deduplication, resolve, reject });
                 const maxBatch = this.pipelining?.maxBatch ?? 200;
                 if (this.pendingAdds.length >= maxBatch) {
                     this.flushPipelinedAdds();
@@ -79,7 +86,7 @@ export class DragonflyQueueRepository<T>
                 }
             });
         }
-        return this.executeAdd(job, score, isDelayed);
+        return this.executeAdd(job, score, isDelayed, deduplication);
     }
 
     private schedulePipelineFlush(): void {
@@ -93,21 +100,52 @@ export class DragonflyQueueRepository<T>
         }
     }
 
-    private async executeAdd(job: Job<T>, score: number, isDelayed: boolean): Promise<void> {
+    private async executeAdd(
+        job: Job<T>,
+        score: number,
+        isDelayed: boolean,
+        deduplication?: { id: string; ttl: number },
+    ): Promise<AddJobResult> {
         const jobKey = this.keyTopology.jobKey(job.id);
         const jobFields = this.createJobFields(job);
 
-        await this.scriptManager.execute(
-            this.redisClient,
-            "add_job",
-            [
-                this.keyTopology.waitingKey,
-                this.keyTopology.delayedKey,
-                jobKey,
-                this.keyTopology.notifyKey,
-            ],
-            [job.id, String(score), isDelayed ? "1" : "0", ...jobFields],
-        );
+        const keys = [
+            this.keyTopology.waitingKey,
+            this.keyTopology.delayedKey,
+            jobKey,
+            this.keyTopology.notifyKey,
+        ];
+
+        let args: (string | number)[];
+
+        if (deduplication?.id) {
+            const dedupKey = this.keyTopology.dedupKey(deduplication.id);
+            keys.push(dedupKey);
+            args = [
+                job.id,
+                String(score),
+                isDelayed ? "1" : "0",
+                String(deduplication.ttl),
+                ...jobFields,
+            ];
+        } else {
+            args = [job.id, String(score), isDelayed ? "1" : "0", ...jobFields];
+        }
+
+        const res = (await this.scriptManager.execute(this.redisClient, "add_job", keys, args)) as
+            | [number, string]
+            | string
+            | undefined;
+
+        let isDuplicate = false;
+        let finalJobId = job.id;
+
+        if (Array.isArray(res)) {
+            isDuplicate = res[0] === 0;
+            finalJobId = String(res[1]);
+        }
+
+        return { isDuplicate, jobId: finalJobId };
     }
 
     private flushPipelinedAdds(): void {
@@ -126,7 +164,20 @@ export class DragonflyQueueRepository<T>
                 jobKey,
                 this.keyTopology.notifyKey,
             ];
-            const args = [item.job.id, String(item.score), item.isDelayed ? "1" : "0", ...fields];
+            let args: (string | number)[];
+            if (item.deduplication?.id) {
+                const dedupKey = this.keyTopology.dedupKey(item.deduplication.id);
+                keys.push(dedupKey);
+                args = [
+                    item.job.id,
+                    String(item.score),
+                    item.isDelayed ? "1" : "0",
+                    String(item.deduplication.ttl),
+                    ...fields,
+                ];
+            } else {
+                args = [item.job.id, String(item.score), item.isDelayed ? "1" : "0", ...fields];
+            }
             this.appendScriptToPipeline(pipeline, "add_job", keys, args);
         }
 
@@ -197,7 +248,14 @@ export class DragonflyQueueRepository<T>
             if (res?.[0]) {
                 item.reject(res[0]);
             } else {
-                item.resolve();
+                let isDuplicate = false;
+                let finalJobId = item.job.id;
+                const value = res?.[1];
+                if (Array.isArray(value)) {
+                    isDuplicate = value[0] === 0;
+                    finalJobId = String(value[1]);
+                }
+                item.resolve({ isDuplicate, jobId: finalJobId });
             }
         }
     }
@@ -784,5 +842,11 @@ export class DragonflyQueueRepository<T>
         } catch {
             return null;
         }
+    }
+
+    public async deleteDeduplicationKey(dedupId: string): Promise<boolean> {
+        const key = this.keyTopology.dedupKey(dedupId);
+        const deleted = await this.redisClient.del(key);
+        return deleted > 0;
     }
 }

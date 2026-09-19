@@ -1,3 +1,4 @@
+import type { DeduplicationOptions } from "../../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
 import type { PipeliningOptions } from "../../infrastructure/dragonfly/dragonfly-queue.repository.js";
 import type { RateLimiterOptions } from "./rate-limiter-options.dto.js";
@@ -10,4 +11,5 @@ export interface QueueOptions {
     pipelining?: PipeliningOptions;
     rateLimiter?: RateLimiterOptions;
     limiter?: RateLimiterOptions;
+    deduplication?: boolean | DeduplicationOptions;
 }

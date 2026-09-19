@@ -277,7 +277,7 @@ describe("Integration: DragonflyQueueRepository", () => {
             { maxBatch: 5, maxWaitMs: 2 },
         );
 
-        const addPromises: Promise<void>[] = [];
+        const addPromises: Promise<unknown>[] = [];
         for (let i = 0; i < 15; i++) {
             const { job, score } = createJob(`pipeline-job-${i}`);
             addPromises.push(pipelinedRepo.add(job, score, false));

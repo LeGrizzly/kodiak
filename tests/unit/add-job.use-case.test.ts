@@ -1,6 +1,8 @@
 import { type Mocked, vi } from "vitest";
 import { AddJobUseCase } from "../../src/application/use-cases/add-job.use-case.js";
+import { JobAlreadyExistsError } from "../../src/domain/errors/job-already-exists.error.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
+import type { IJobSerializer } from "../../src/domain/serializers/job-serializer.interface.js";
 
 // Score calculation multiplier from AddJobUseCase implementation
 const PRIORITY_MULTIPLIER = 10000000000000;
@@ -227,5 +229,127 @@ describe("AddJobUseCase", () => {
         const result = await addJobUseCase.execute(id, data, { repeat });
 
         expect(result.repeat).toEqual({ every: 5000, limit: 10, count: 0 });
+    });
+
+    describe("Deduplication & Idempotency", () => {
+        it("should pass explicit deduplication id and ttl to repository", async () => {
+            const id = "job-dedup-1";
+            const data = { message: "dedup test" };
+            const options = {
+                deduplication: {
+                    id: "custom-dedup-key",
+                    ttl: 30000,
+                },
+            };
+
+            await addJobUseCase.execute(id, data, options);
+
+            expect(mockQueueRepository.add).toHaveBeenCalledWith(
+                expect.any(Object),
+                expect.any(Number),
+                false,
+                { id: "custom-dedup-key", ttl: 30000 },
+            );
+        });
+
+        it("should compute SHA-256 content hash when deduplication is true without explicit id", async () => {
+            const id = "job-dedup-2";
+            const data = { message: "auto hash" };
+
+            await addJobUseCase.execute(id, data, { deduplication: true });
+
+            expect(mockQueueRepository.add).toHaveBeenCalledWith(
+                expect.any(Object),
+                expect.any(Number),
+                false,
+                { id: expect.any(String), ttl: 60000 },
+            );
+        });
+
+        it("should use serializer when available to compute content hash", async () => {
+            const mockSerializer: IJobSerializer = {
+                serialize: vi.fn().mockReturnValue(Buffer.from("custom-serialized-bytes")),
+                deserialize: vi.fn(),
+            };
+            const useCaseWithSerializer = new AddJobUseCase(mockQueueRepository, mockSerializer);
+
+            await useCaseWithSerializer.execute(
+                "job-ser",
+                { message: "serialized" },
+                { deduplication: true },
+            );
+
+            expect(mockSerializer.serialize).toHaveBeenCalledWith({ message: "serialized" });
+            expect(mockQueueRepository.add).toHaveBeenCalledWith(
+                expect.any(Object),
+                expect.any(Number),
+                false,
+                expect.objectContaining({ id: expect.any(String), ttl: 60000 }),
+            );
+        });
+
+        it("should use string directly when data is string and no serializer", async () => {
+            const stringUseCase = new AddJobUseCase<string>(
+                mockQueueRepository as unknown as IQueueRepository<string>,
+            );
+
+            await stringUseCase.execute("str-job", "raw-string-data", { deduplication: true });
+
+            expect(mockQueueRepository.add).toHaveBeenCalledWith(
+                expect.any(Object),
+                expect.any(Number),
+                false,
+                expect.objectContaining({ id: expect.any(String), ttl: 60000 }),
+            );
+        });
+
+        it("should mark job as duplicate and update id when strategy is ignore-if-exists", async () => {
+            vi.mocked(mockQueueRepository.add).mockResolvedValue({
+                isDuplicate: true,
+                jobId: "existing-job-99",
+            });
+
+            const result = await addJobUseCase.execute(
+                "new-job",
+                { message: "test" },
+                { deduplication: { id: "dedup-key-1", strategy: "ignore-if-exists" } },
+            );
+
+            expect(result.isDuplicate).toBe(true);
+            expect(result.id).toBe("existing-job-99");
+
+            // Verify updateProgress uses the existing job's id
+            await result.updateProgress?.(50);
+            expect(mockQueueRepository.updateProgress).toHaveBeenCalledWith("existing-job-99", 50);
+        });
+
+        it("should throw JobAlreadyExistsError when duplicate detected and strategy is throw", async () => {
+            vi.mocked(mockQueueRepository.add).mockResolvedValue({
+                isDuplicate: true,
+                jobId: "original-job-42",
+            });
+
+            await expect(
+                addJobUseCase.execute(
+                    "attempted-job",
+                    { message: "test" },
+                    { deduplication: { id: "unique-order-key", strategy: "throw" } },
+                ),
+            ).rejects.toThrow(JobAlreadyExistsError);
+        });
+
+        it("should not trigger deduplication when deduplication is false", async () => {
+            await addJobUseCase.execute(
+                "job-no-dedup",
+                { message: "plain" },
+                { deduplication: false },
+            );
+
+            expect(mockQueueRepository.add).toHaveBeenCalledWith(
+                expect.any(Object),
+                expect.any(Number),
+                false,
+            );
+        });
     });
 });

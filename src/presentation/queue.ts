@@ -11,6 +11,7 @@ import { GetRateLimitStatusUseCase } from "../application/use-cases/get-rate-lim
 import { RetryFailedJobUseCase } from "../application/use-cases/retry-failed-job.use-case.js";
 import type { Job } from "../domain/entities/job.entity.js";
 import type {
+    DeduplicationOptions,
     IDLQRepository,
     IQueueRepository,
     IRateLimiterRepository,
@@ -32,6 +33,7 @@ export class Queue<T> extends EventEmitter {
     private readonly consumeRateLimitUseCase: ConsumeRateLimitUseCase;
     private readonly getRateLimitStatusUseCase: GetRateLimitStatusUseCase;
     private readonly queueRepository: IQueueRepository<T>;
+    private readonly defaultDeduplication?: boolean | DeduplicationOptions;
     private schedulerInterval: NodeJS.Timeout | null = null;
     private recoveringStalledJobs = false;
     private readonly connection: { quit: () => Promise<unknown> };
@@ -49,6 +51,7 @@ export class Queue<T> extends EventEmitter {
         let serializer: IJobSerializer | undefined;
         let pipeOpts: PipeliningOptions | undefined = pipelining;
         let limiterOpts: RateLimiterOptions | undefined = rateLimiter;
+        let dedupOpts: boolean | DeduplicationOptions | undefined;
 
         if (
             serializerOrOptions &&
@@ -59,24 +62,28 @@ export class Queue<T> extends EventEmitter {
             pipeOpts = serializerOrOptions.pipelining ?? pipeOpts;
             limiterOpts =
                 serializerOrOptions.rateLimiter ?? serializerOrOptions.limiter ?? limiterOpts;
+            dedupOpts = serializerOrOptions.deduplication;
         } else if (serializerOrOptions && "serialize" in serializerOrOptions) {
             serializer = serializerOrOptions;
         }
 
+        this.defaultDeduplication = dedupOpts;
+
         const conn = this.kodiak.connection.duplicate();
         this.connection = conn;
+        const effectiveSerializer = serializer ?? this.kodiak.serializer;
         this.queueRepository =
             repository ??
             new DragonflyQueueRepository<T>(
                 name,
                 conn,
                 this.kodiak.prefix,
-                serializer ?? this.kodiak.serializer,
+                effectiveSerializer,
                 pipeOpts ?? this.kodiak.pipelining,
                 limiterOpts,
             );
 
-        this.addJobUseCase = new AddJobUseCase<T>(this.queueRepository);
+        this.addJobUseCase = new AddJobUseCase<T>(this.queueRepository, effectiveSerializer);
         const dlqRepo = this.queueRepository as unknown as IDLQRepository<T>;
         this.getFailedCountUseCase = new GetFailedCountUseCase<T>(dlqRepo);
         this.getFailedJobsUseCase = new GetFailedJobsUseCase<T>(dlqRepo);
@@ -91,7 +98,18 @@ export class Queue<T> extends EventEmitter {
     }
 
     public async add(id: string, data: T, options?: JobOptions): Promise<Job<T>> {
-        return this.addJobUseCase.execute(id, data, options);
+        let mergedOptions = options;
+        if (this.defaultDeduplication !== undefined && options?.deduplication === undefined) {
+            mergedOptions = {
+                ...options,
+                deduplication: this.defaultDeduplication,
+            };
+        }
+        return this.addJobUseCase.execute(id, data, mergedOptions);
+    }
+
+    public async removeDeduplicationKey(dedupId: string): Promise<boolean> {
+        return (await this.queueRepository.deleteDeduplicationKey?.(dedupId)) ?? false;
     }
 
     public async getFailedCount(): Promise<number> {

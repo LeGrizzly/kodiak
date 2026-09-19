@@ -44,4 +44,8 @@ export class DragonflyKeyTopology {
     public jobKey(jobId: string): string {
         return `${this.hashtag}:jobs:${jobId}`;
     }
+
+    public dedupKey(dedupId: string): string {
+        return `${this.hashtag}:dedup:${dedupId}`;
+    }
 }

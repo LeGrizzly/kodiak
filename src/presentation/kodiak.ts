@@ -39,6 +39,9 @@ export class Kodiak {
         if (options) {
             this.queueConfigs.set(name, options);
         }
+        if (options && options.deduplication !== undefined) {
+            return new Queue<T>(name, this, undefined, options);
+        }
         const limiter = options?.rateLimiter ?? options?.limiter;
         if (limiter !== undefined) {
             return new Queue<T>(
