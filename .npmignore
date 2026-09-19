@@ -10,7 +10,6 @@ coverage/
 .releaserc.json
 .prettierrc
 eslint.config.js
-jest.config.cjs
 tsconfig.json
 
 # Logs & build artifacts (already ignored by git but good to be safe)

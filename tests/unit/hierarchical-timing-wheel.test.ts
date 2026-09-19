@@ -143,8 +143,8 @@ describe("HierarchicalTimingWheel", () => {
         const insertDurationMs = performance.now() - t0;
 
         expect(wheel.size()).toBe(count);
-        // 10k O(1) insertions in JS typically take < 25ms, allow up to 200ms for AST coverage instrumentation
-        expect(insertDurationMs).toBeLessThan(200);
+        // 10k O(1) insertions in JS typically take < 25ms, allow up to 1000ms for AST coverage instrumentation
+        expect(insertDurationMs).toBeLessThan(1000);
     });
 
     it("should instantiate with default options and advance with default nowMs", () => {

@@ -32,8 +32,8 @@ export class WorkerAckBuffer<T> {
         private readonly completeJobUseCase: CompleteJobUseCase<T>,
         private readonly options?: WorkerAckBufferOptions<T>,
     ) {
-        this.maxBatch = options?.maxBatch ?? 50;
-        this.maxWaitMs = options?.maxWaitMs ?? 2;
+        this.maxBatch = options?.maxBatch ?? 100;
+        this.maxWaitMs = options?.maxWaitMs ?? 0;
     }
 
     public get pendingCount(): number {

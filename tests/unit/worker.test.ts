@@ -791,4 +791,32 @@ describe("Worker", () => {
 
         expect(errorEmitter).not.toHaveBeenCalled();
     });
+
+    it("should steal jobs from another slot buffer when current slot buffer is empty", async () => {
+        const worker = new Worker("test-queue", processor, mockKodiak, { concurrency: 3 });
+        const job = createMockJob({ id: "stolen-job" });
+        worker.jobBuffers.set(0, []);
+        worker.jobBuffers.set(1, []);
+        worker.jobBuffers.set(2, [job]);
+
+        const stolen = await worker.getJob(1, "tok-1");
+        expect(stolen?.id).toBe("stolen-job");
+        expect(worker.jobBuffers.get(2)).toHaveLength(0);
+    });
+
+    it("should distribute remaining fetched jobs to other slots when concurrency > 1", async () => {
+        const worker = new Worker("test-queue", processor, mockKodiak, { concurrency: 2 });
+        const job1 = createMockJob({ id: "job-1" });
+        const job2 = createMockJob({ id: "job-2" });
+        const job3 = createMockJob({ id: "job-3" });
+
+        (
+            mockFetchExecute as MockedFunction<(...args: unknown[]) => Promise<unknown>>
+        ).mockResolvedValueOnce([job1, job2, job3]);
+
+        const firstJob = await worker.getJob(0, "tok-0");
+        expect(firstJob?.id).toBe("job-1");
+        expect(worker.jobBuffers.get(1)?.map((j) => j?.id)).toEqual(["job-2"]);
+        expect(worker.jobBuffers.get(0)?.map((j) => j?.id)).toEqual(["job-3"]);
+    });
 });

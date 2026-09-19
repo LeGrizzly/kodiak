@@ -19,7 +19,6 @@ export class DragonflyConnection implements IConnection {
                 retryStrategy: (times: number) => Math.min(100 * times, 2000),
                 enableOfflineQueue: true,
                 connectTimeout: 10000,
-                enableAutoPipelining: true,
                 noDelay: true,
                 keepAlive: 30000,
             };

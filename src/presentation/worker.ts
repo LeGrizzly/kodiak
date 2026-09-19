@@ -245,15 +245,22 @@ export class Worker<T> extends EventEmitter {
     }
 
     public async getJob(slotIndex: number, ownerToken: string): Promise<Job<T> | null> {
-        const buffered = this.jobBuffers.get(slotIndex) ?? [];
-        if (buffered.length > 0) {
-            const nextJob = buffered.shift() ?? null;
-            this.jobBuffers.set(slotIndex, buffered);
-            return nextJob;
-        }
-
         await this.bufferLock.acquire();
         try {
+            const buffered = this.jobBuffers.get(slotIndex) ?? [];
+            if (buffered.length > 0) {
+                const nextJob = buffered.shift() ?? null;
+                this.jobBuffers.set(slotIndex, buffered);
+                return nextJob;
+            }
+
+            for (const [otherSlot, otherBuffer] of this.jobBuffers.entries()) {
+                if (otherSlot !== slotIndex) {
+                    const stolen = otherBuffer.shift();
+                    if (stolen) return stolen;
+                }
+            }
+
             if (!this.creditController.hasCredit()) {
                 return null;
             }
@@ -292,7 +299,18 @@ export class Worker<T> extends EventEmitter {
             if (jobs && jobs.length > 0) {
                 const remaining = jobs.slice();
                 const job = remaining.shift() as Job<T>;
-                this.jobBuffers.set(slotIndex, remaining);
+                const concurrency = this.opts?.concurrency ?? 1;
+                if (concurrency > 1 && remaining.length > 0) {
+                    let targetSlot = (slotIndex + 1) % concurrency;
+                    for (const next of remaining) {
+                        const targetBuf = this.jobBuffers.get(targetSlot) ?? [];
+                        targetBuf.push(next);
+                        this.jobBuffers.set(targetSlot, targetBuf);
+                        targetSlot = (targetSlot + 1) % concurrency;
+                    }
+                } else {
+                    this.jobBuffers.set(slotIndex, remaining);
+                }
                 return job ?? null;
             }
             return null;
@@ -303,14 +321,22 @@ export class Worker<T> extends EventEmitter {
 
     private async processSlotLoop(slotIndex: number): Promise<void> {
         const ownerToken = `${this.workerId}:${slotIndex}`;
+        let consecutiveEmpty = 0;
         while (this.isRunning) {
             try {
                 const job = await this.getJob(slotIndex, ownerToken);
                 if (job) {
+                    consecutiveEmpty = 0;
                     await this.executeJobWithLifecycle(job, ownerToken);
                 } else if (this.isRunning) {
                     const t0 = this.opts?.telemetry ? performance.now() : 0;
-                    await setTimeout(100);
+                    consecutiveEmpty++;
+                    if (consecutiveEmpty <= 3) {
+                        await new Promise((resolve) => setImmediate(resolve));
+                    } else {
+                        const backoff = Math.min(20, (consecutiveEmpty - 3) * 2);
+                        await setTimeout(backoff);
+                    }
                     if (this.opts?.telemetry) {
                         this.telemetryData.idleDurationMs += performance.now() - t0;
                     }
