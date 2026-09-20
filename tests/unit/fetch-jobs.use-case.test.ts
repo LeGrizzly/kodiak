@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import { FetchJobsUseCase } from "../../src/application/use-cases/fetch-jobs.use-case.js";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("FetchJobsUseCase", () => {
     let fetchJobsUseCase: FetchJobsUseCase<number>;
-    let mockQueueRepository: jest.Mocked<IQueueRepository<number>>;
+    let mockQueueRepository: Mocked<IQueueRepository<number>>;
 
     const mockJobs: Job<number>[] = [
         {
@@ -21,16 +21,16 @@ describe("FetchJobsUseCase", () => {
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest.fn(),
-            updateProgress: jest.fn(),
-            fetchNextJobs: jest.fn(),
-            promoteDelayedJobs: jest.fn(),
-            recoverStalledJobs: jest.fn(),
-            extendLock: jest.fn(),
-        } as unknown as jest.Mocked<IQueueRepository<number>>;
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi.fn(),
+            updateProgress: vi.fn(),
+            fetchNextJobs: vi.fn(),
+            promoteDelayedJobs: vi.fn(),
+            recoverStalledJobs: vi.fn(),
+            extendLock: vi.fn(),
+        } as unknown as Mocked<IQueueRepository<number>>;
 
         fetchJobsUseCase = new FetchJobsUseCase(mockQueueRepository);
     });

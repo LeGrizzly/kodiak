@@ -33,5 +33,6 @@ export interface Job<T> {
     traceparent?: string;
     progress?: number;
     processedAt?: Date;
+    isDuplicate?: boolean;
     updateProgress?: (progress: number) => Promise<void>;
 }

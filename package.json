@@ -39,8 +39,11 @@
         "build": "tsc -p tsconfig.build.json && bun -e \"const fs = require('fs'); fs.cpSync('src/infrastructure/dragonfly/lua', 'dist/infrastructure/dragonfly/lua', {recursive: true, force: true});\"",
         "typecheck": "tsc --noEmit",
         "typecheck:build": "tsc -p tsconfig.build.json --noEmit",
-        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-        "coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:unit": "vitest run tests/unit",
+        "test:integration": "vitest run tests/integration",
+        "coverage": "vitest run --coverage",
         "example": "bun run examples/simple.ts",
         "lint": "biome lint src tests examples",
         "lint:fix": "biome lint --write src tests examples",
@@ -54,14 +57,13 @@
         "msgpackr": "^2.1.0"
     },
     "devDependencies": {
-        "@biomejs/biome": "^2.5.13",
+        "@biomejs/biome": "^2.5.14",
         "@semantic-release/changelog": "^7.0.0",
         "@semantic-release/git": "^11.0.1",
-        "@types/jest": "^30.0.0",
-        "@types/node": "^26.5.1",
-        "jest": "^30.5.1",
+        "@types/node": "^26.6.1",
+        "@vitest/coverage-v8": "^5.0.1",
         "semantic-release": "^25.0.9",
-        "ts-jest": "^29.4.12",
-        "typescript": "6"
+        "typescript": "6",
+        "vitest": "^5.0.1"
     }
 }

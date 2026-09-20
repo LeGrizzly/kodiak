@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "vitest";
 import * as DragonflyIndex from "../../src/infrastructure/dragonfly/index.js";
 import * as KodiakIndex from "../../src/presentation/index.js";
 
@@ -22,6 +22,19 @@ describe("Index Exports", () => {
         expect(KodiakIndex.KODIAK_FRAME_MAGIC).toBeDefined();
         expect(KodiakIndex.KODIAK_HEADER_SIZE).toBeDefined();
         expect(KodiakIndex.KodiakOpCode).toBeDefined();
+        expect(KodiakIndex.ConsumeRateLimitUseCase).toBeDefined();
+        expect(KodiakIndex.GetRateLimitStatusUseCase).toBeDefined();
+        expect(KodiakIndex.JobAlreadyExistsError).toBeDefined();
+        expect(KodiakIndex.JobOptionsBuilder).toBeDefined();
+        expect(KodiakIndex.jobOptions).toBeDefined();
+        expect(KodiakIndex.QueueOptionsBuilder).toBeDefined();
+        expect(KodiakIndex.queueOptions).toBeDefined();
+        expect(KodiakIndex.WorkerOptionsBuilder).toBeDefined();
+        expect(KodiakIndex.workerOptions).toBeDefined();
+        expect(KodiakIndex.JobBuilder).toBeDefined();
+        expect(KodiakIndex.QueueBuilder).toBeDefined();
+        expect(KodiakIndex.WorkerBuilder).toBeDefined();
+        expect(KodiakIndex.TaskBuilder).toBeDefined();
     });
 
     it("should export all dragonfly infrastructure classes", () => {

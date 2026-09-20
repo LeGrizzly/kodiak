@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, vi } from "vitest";
 
 let shouldFailAll = false;
 let returnEmptyFirst = false;
@@ -19,10 +19,10 @@ const mockRead = (filePath: unknown) => {
     throw new Error("ENOENT: not in primary dir");
 };
 
-jest.unstable_mockModule("node:fs", () => ({
-    readFileSync: jest.fn().mockImplementation(mockRead),
+vi.doMock("node:fs", () => ({
+    readFileSync: vi.fn(mockRead),
     default: {
-        readFileSync: jest.fn().mockImplementation(mockRead),
+        readFileSync: vi.fn(mockRead),
     },
 }));
 

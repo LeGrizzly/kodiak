@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
-jest.unstable_mockModule("fs", () => ({
-    readFileSync: jest.fn().mockReturnValue("return 1"),
-    default: { readFileSync: jest.fn().mockReturnValue("return 1") },
+vi.doMock("fs", () => ({
+    readFileSync: vi.fn().mockReturnValue("return 1"),
+    default: { readFileSync: vi.fn().mockReturnValue("return 1") },
 }));
 
 const { DragonflyQueueRepository } = await import(
@@ -11,30 +11,30 @@ const { DragonflyQueueRepository } = await import(
 );
 
 describe("DragonflyQueueRepository extra coverage", () => {
-    let mockRedis: Partial<Redis> & { pipeline: jest.Mock };
+    let mockRedis: Partial<Redis> & { pipeline: Mock };
     let mockPipeline: {
-        hset: jest.Mock;
-        hgetall: jest.Mock;
-        hdel: jest.Mock;
-        exec: jest.Mock;
+        hset: Mock;
+        hgetall: Mock;
+        hdel: Mock;
+        exec: Mock;
     };
     let repo: InstanceType<typeof DragonflyQueueRepository>;
 
     beforeEach(() => {
         mockPipeline = {
-            hset: jest.fn().mockReturnThis(),
-            hgetall: jest.fn().mockReturnThis(),
-            hdel: jest.fn().mockReturnThis(),
-            exec: jest.fn(),
+            hset: vi.fn().mockReturnThis(),
+            hgetall: vi.fn().mockReturnThis(),
+            hdel: vi.fn().mockReturnThis(),
+            exec: vi.fn(),
         };
 
         mockRedis = {
-            eval: jest.fn(),
-            pipeline: jest.fn().mockReturnValue(mockPipeline),
-        } as unknown as Partial<Redis> & { pipeline: jest.Mock };
+            eval: vi.fn(),
+            pipeline: vi.fn().mockReturnValue(mockPipeline),
+        } as unknown as Partial<Redis> & { pipeline: Mock };
 
         repo = new DragonflyQueueRepository("q", mockRedis as unknown as Redis, "pref");
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it("fetchNextJobs should call hset without lock_owner when ownerToken not provided", async () => {
@@ -48,8 +48,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
             state: "active",
         };
 
-        (mockRedis.eval as jest.Mock).mockResolvedValue(jobIds as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValue([
+        (mockRedis.eval as Mock).mockResolvedValue(jobIds as never);
+        (mockPipeline.exec as Mock).mockResolvedValue([
             [null, "OK"],
             [null, jobData],
         ] as never);
@@ -59,32 +59,32 @@ describe("DragonflyQueueRepository extra coverage", () => {
         expect(jobs).toHaveLength(1);
         // hset should have been called without lock_owner arg (i.e., 4 args after key)
         expect(mockPipeline.hset).toHaveBeenCalled();
-        const hsetArgs = (mockPipeline.hset as jest.Mock).mock.calls[0] as unknown[];
+        const hsetArgs = (mockPipeline.hset as Mock).mock.calls[0] as unknown[];
         // args: jobKey, 'state', 'active', 'started_at', now
         expect(hsetArgs.length).toBeGreaterThanOrEqual(5);
         expect(hsetArgs).not.toContain("lock_owner");
     });
 
     it("extendLock returns true/false and forwards ownerToken correctly", async () => {
-        (mockRedis.eval as jest.Mock)
+        (mockRedis.eval as Mock)
             .mockResolvedValueOnce(1 as never)
             .mockResolvedValueOnce(0 as never);
 
         const res1 = await repo.extendLock("job-1", Date.now() + 1000, "owner-1");
         expect(res1).toBe(true);
-        const call1 = (mockRedis.eval as jest.Mock).mock.calls[0] as unknown[];
+        const call1 = (mockRedis.eval as Mock).mock.calls[0] as unknown[];
         // last argument should be owner token
         expect(call1?.[6]).toBe("owner-1");
 
         const res2 = await repo.extendLock("job-2", Date.now() + 1000);
         expect(res2).toBe(false);
-        const call2 = (mockRedis.eval as jest.Mock).mock.calls[1] as unknown[];
+        const call2 = (mockRedis.eval as Mock).mock.calls[1] as unknown[];
         // when ownerToken omitted, last arg should be empty string
         expect(call2?.[6]).toBe("");
     });
 
     it("releaseJobs invokes release_jobs script with keys and jobIds", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValue(2 as never);
+        (mockRedis.eval as Mock).mockResolvedValue(2 as never);
 
         await repo.releaseJobs(["j1", "j2"]);
 
@@ -129,9 +129,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
         };
 
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([
                 [null, 1],
                 [null, 1],
             ] as never),
@@ -168,9 +168,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
         // 1. exec() rejects
         const mockFailPipeline = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockRejectedValue(new Error("Pipeline failed") as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockRejectedValue(new Error("Pipeline failed") as never),
         };
         mockRedis.pipeline.mockReturnValue(mockFailPipeline);
 
@@ -178,9 +178,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
         // 2. exec() returns null
         const mockNullPipeline = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue(null as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue(null as never),
         };
         mockRedis.pipeline.mockReturnValue(mockNullPipeline);
 
@@ -190,9 +190,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
         // 3. exec() returns item-level error
         const mockItemErrPipeline = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[new Error("Item error"), null]] as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[new Error("Item error"), null]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockItemErrPipeline);
 
@@ -201,9 +201,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("pipelined markAsCompleted handles immediate flush, delayed timer, and rejection", async () => {
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[null, 1]] as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[null, 1]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockPipelineObj);
 
@@ -239,8 +239,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
             { maxBatch: 1, maxWaitMs: 0 },
         );
         mockRedis.pipeline.mockReturnValue({
-            evalsha: jest.fn(),
-            exec: jest.fn().mockRejectedValue(new Error("Flush failed") as never),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockRejectedValue(new Error("Flush failed") as never),
         });
 
         await expect(failingPipelinedRepo.markAsCompleted("c3", new Date())).rejects.toThrow(
@@ -258,8 +258,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
         );
 
         const mockPipelineNoSha = {
-            eval: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[null, 1]] as never),
+            eval: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[null, 1]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockPipelineNoSha);
 
@@ -272,15 +272,15 @@ describe("DragonflyQueueRepository extra coverage", () => {
         const rawArrayResult = [
             ["job-arr-1", ["data", JSON.stringify({ item: "data1" }), "priority", "5"]],
         ];
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(rawArrayResult as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce(rawArrayResult as never);
 
         const jobs1 = await repo.fetchNextJobs(1, 1000);
         expect(jobs1).toHaveLength(1);
         expect(jobs1[0]?.id).toBe("job-arr-1");
 
         // 2. string[] result with ownerToken
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(["job-str-1"] as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce(["job-str-1"] as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce([
             [null, "OK"],
             [null, { data: JSON.stringify({ item: "data2" }), state: "active" }],
         ] as never);
@@ -301,8 +301,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
     it("markManyAsCompleted throws when exec returns null or errors", async () => {
         // null exec
         mockRedis.pipeline.mockReturnValue({
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue(null as never),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue(null as never),
         });
 
         await expect(
@@ -311,8 +311,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
         // item error in exec
         mockRedis.pipeline.mockReturnValue({
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[new Error("Item error")]] as never),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[new Error("Item error")]] as never),
         });
 
         await expect(
@@ -325,8 +325,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("promoteDelayedJobs handles string[] results, empty results, and null", async () => {
         // Returns array of string IDs
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(["j1", "j2"] as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce(["j1", "j2"] as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce([
             [null, 1],
             [null, 1],
         ] as never);
@@ -336,17 +336,17 @@ describe("DragonflyQueueRepository extra coverage", () => {
         expect(mockPipeline.hset).toHaveBeenCalledWith(expect.any(String), "state", "waiting");
 
         // Returns empty array
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([] as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce([] as never);
         expect(await repo.promoteDelayedJobs(10)).toBe(0);
 
         // Returns null
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(null as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce(null as never);
         expect(await repo.promoteDelayedJobs(10)).toBe(0);
     });
 
     it("buildJobFromRecord constructs job with prev_error and ignores corrupted data", async () => {
         // Fetch result with prev_error
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce([
             [
                 "j-prev",
                 [
@@ -366,23 +366,21 @@ describe("DragonflyQueueRepository extra coverage", () => {
         expect(jobs[0]?.errorHistory?.[0]?.error).toBe("timeout");
 
         // Raw with missing data returns null
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([
-            ["j-empty", ["state", "active"]],
-        ] as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce([["j-empty", ["state", "active"]]] as never);
         const emptyJobs = await repo.fetchNextJobs(1, 1000);
         expect(emptyJobs).toHaveLength(0);
 
         // Raw with empty array returns null
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([["j-empty2", []]] as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce([["j-empty2", []]] as never);
         const emptyJobs2 = await repo.fetchNextJobs(1, 1000);
         expect(emptyJobs2).toHaveLength(0);
     });
 
     it("pipelined add schedules timer when maxWaitMs > 0 and traceparent is added", async () => {
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[null, 1]] as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[null, 1]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockPipelineObj);
 
@@ -411,9 +409,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("pipelined markAsCompleted uses queueMicrotask when maxWaitMs is 0", async () => {
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[null, 1]] as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[null, 1]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockPipelineObj);
 
@@ -431,14 +429,14 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("fetchNext handles unexpected raw result type returning null", async () => {
         // eval returns a number instead of string or array
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(12345 as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce(12345 as never);
 
         const job = await repo.fetchNext(1000);
         expect(job).toBeNull();
     });
 
     it("promoteDelayedJobs returns 0 when raw result is an unexpected object", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce({ unexpected: "type" } as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce({ unexpected: "type" } as never);
 
         const result = await repo.promoteDelayedJobs(10);
         expect(result).toBe(0);
@@ -477,9 +475,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("should handle raw serializer output as string, Buffer, and Uint8Array", async () => {
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[null, 1]] as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[null, 1]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockPipelineObj);
 
@@ -535,7 +533,7 @@ describe("DragonflyQueueRepository extra coverage", () => {
     });
 
     it("should forward ownerToken in non-pipelined markAsCompleted", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(1 as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce(1 as never);
 
         await repo.markAsCompleted("j-comp", new Date(), "owner-123");
         expect(mockRedis.eval).toHaveBeenCalledWith(
@@ -556,7 +554,7 @@ describe("DragonflyQueueRepository extra coverage", () => {
     });
 
     it("should build job record with started_at and fallback for prev_failed_at", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce([
             [
                 "j-started",
                 [
@@ -578,23 +576,23 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("processFetchResult handles null pipeline results, error, and missing data", async () => {
         // String result from move_to_active triggers pipeline hgetall
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce("j-null1" as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce(null as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce("j-null1" as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce(null as never);
         expect(await repo.fetchNext(1000)).toBeNull();
 
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce("j-null2" as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce([[null, "OK"], null] as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce("j-null2" as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce([[null, "OK"], null] as never);
         expect(await repo.fetchNext(1000)).toBeNull();
 
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce("j-null3" as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce("j-null3" as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce([
             [null, "OK"],
             [new Error("HGETALL failed"), null],
         ] as never);
         expect(await repo.fetchNext(1000)).toBeNull();
 
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce("j-null4" as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce("j-null4" as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce([
             [null, "OK"],
             [null, { otherField: "1" }], // missing 'data'
         ] as never);
@@ -603,9 +601,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("pipelined add and complete handle already scheduled flushes and default maxBatch", async () => {
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([
                 [null, 1],
                 [null, 1],
             ] as never),
@@ -661,8 +659,8 @@ describe("DragonflyQueueRepository extra coverage", () => {
     });
 
     it("fetchNextJobs string[] pipeline handles missing result entries", async () => {
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(["job-1"] as never);
-        (mockPipeline.exec as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce(["job-1"] as never);
+        (mockPipeline.exec as Mock).mockResolvedValueOnce([
             [null, "OK"],
             null, // missing result at results[1]
         ] as never);
@@ -677,9 +675,9 @@ describe("DragonflyQueueRepository extra coverage", () => {
         };
 
         const mockPipelineObj = {
-            eval: jest.fn(),
-            evalsha: jest.fn(),
-            exec: jest.fn().mockResolvedValue([[null, 1]] as never),
+            eval: vi.fn(),
+            evalsha: vi.fn(),
+            exec: vi.fn().mockResolvedValue([[null, 1]] as never),
         };
         mockRedis.pipeline.mockReturnValue(mockPipelineObj);
 
@@ -715,7 +713,7 @@ describe("DragonflyQueueRepository extra coverage", () => {
 
     it("should handle odd-length raw arrays, failedAt, progress, and updateProgress", async () => {
         // 1. rawData with odd length in processFetchResult (move_to_active direct array)
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce([
             "j-odd",
             [
                 "data",
@@ -734,11 +732,11 @@ describe("DragonflyQueueRepository extra coverage", () => {
         expect(job1?.progress).toBe(50);
 
         // Test updateProgress attached to job
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce(1 as never);
+        (mockRedis.eval as Mock).mockResolvedValueOnce(1 as never);
         await job1?.updateProgress?.(75);
 
         // 2. raw with odd length in buildJobFromRaw (fetchNextJobs) and without failed_at
-        (mockRedis.eval as jest.Mock).mockResolvedValueOnce([
+        (mockRedis.eval as Mock).mockResolvedValueOnce([
             ["j-odd2", ["data", JSON.stringify({ odd2: true }), "trailing_key2"]],
         ] as never);
 
@@ -748,7 +746,7 @@ describe("DragonflyQueueRepository extra coverage", () => {
     });
 
     it("should handle timers without unref method in pipeline schedulers", async () => {
-        const timerSpy = jest
+        const timerSpy = vi
             .spyOn(global, "setTimeout")
             .mockReturnValue(12345 as unknown as NodeJS.Timeout);
 

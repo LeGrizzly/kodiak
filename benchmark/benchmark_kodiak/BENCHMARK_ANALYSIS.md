@@ -1,66 +1,66 @@
 # 🐾 Rapport d'Analyse Détaillée des Performances (Kodiak & DragonflyDB)
-Date : 2026-09-14T14:37:06.730Z
+Date : 2026-09-20T09:28:22.383Z
 
 ## 1. Synthèse Globale des Scénarios
 
 | Jobs | Concurrence | Ingestion (ms) | Débit Ingestion | Temps Total (ms) | Débit Traitement | Latence E2E (P50) | Latence E2E (P99) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 10 | 1 | 4.94 ms | 2,025 jobs/s | 116.8 ms | **86 ops/s** | 107 ms | 107 ms |
-| 10 | 5 | 8.95 ms | 1,118 jobs/s | 16.53 ms | **605 ops/s** | 13 ms | 13 ms |
-| 10 | 10 | 18.84 ms | 531 jobs/s | 24.41 ms | **410 ops/s** | 19 ms | 21 ms |
-| 100 | 1 | 45.37 ms | 2,204 jobs/s | 162.81 ms | **614 ops/s** | 135 ms | 144 ms |
-| 100 | 5 | 48.2 ms | 2,075 jobs/s | 53.67 ms | **1,863 ops/s** | 36 ms | 48 ms |
-| 100 | 10 | 32.38 ms | 3,088 jobs/s | 36.66 ms | **2,728 ops/s** | 22 ms | 33 ms |
-| 1,000 | 1 | 200.18 ms | 4,996 jobs/s | 278.31 ms | **3,593 ops/s** | 149 ms | 191 ms |
-| 1,000 | 5 | 227.88 ms | 4,388 jobs/s | 234.42 ms | **4,266 ops/s** | 125 ms | 222 ms |
-| 1,000 | 10 | 223.18 ms | 4,481 jobs/s | 243.34 ms | **4,109 ops/s** | 123 ms | 218 ms |
-| 10,000 | 1 | 2023.56 ms | 4,942 jobs/s | 2281.82 ms | **4,382 ops/s** | 1011 ms | 1983 ms |
-| 10,000 | 5 | 1894.38 ms | 5,279 jobs/s | 2117.68 ms | **4,722 ops/s** | 972 ms | 1854 ms |
-| 10,000 | 10 | 1928.53 ms | 5,185 jobs/s | 2105.43 ms | **4,750 ops/s** | 998 ms | 1890 ms |
+| 10 | 1 | 4.77 ms | 2,099 jobs/s | 8.47 ms | **1,181 ops/s** | 5 ms | 5 ms |
+| 10 | 5 | 5.27 ms | 1,896 jobs/s | 12.69 ms | **788 ops/s** | 9 ms | 9 ms |
+| 10 | 10 | 4.52 ms | 2,212 jobs/s | 7.02 ms | **1,424 ops/s** | 4 ms | 5 ms |
+| 100 | 1 | 24.21 ms | 4,130 jobs/s | 36.34 ms | **2,752 ops/s** | 14 ms | 27 ms |
+| 100 | 5 | 17.72 ms | 5,643 jobs/s | 28.94 ms | **3,455 ops/s** | 14 ms | 19 ms |
+| 100 | 10 | 19.29 ms | 5,183 jobs/s | 30.93 ms | **3,233 ops/s** | 16 ms | 20 ms |
+| 1,000 | 1 | 123.57 ms | 8,092 jobs/s | 139.67 ms | **7,160 ops/s** | 57 ms | 112 ms |
+| 1,000 | 5 | 164.54 ms | 6,078 jobs/s | 206.94 ms | **4,832 ops/s** | 83 ms | 155 ms |
+| 1,000 | 10 | 248.28 ms | 4,028 jobs/s | 254.61 ms | **3,928 ops/s** | 115 ms | 243 ms |
+| 10,000 | 1 | 2069.09 ms | 4,833 jobs/s | 2176.09 ms | **4,595 ops/s** | 1041 ms | 2002 ms |
+| 10,000 | 5 | 2105.99 ms | 4,748 jobs/s | 2109.1 ms | **4,741 ops/s** | 1062 ms | 2008 ms |
+| 10,000 | 10 | 1979.42 ms | 5,052 jobs/s | 2124.64 ms | **4,707 ops/s** | 1017 ms | 1937 ms |
 
 ## 2. Décomposition du Temps Worker (Profiling Interne)
 
 | Jobs | Concurrence | Fetch (%) | Exécution (%) | Acquittement ACK (%) | Idle (%) | Goulot Principal |
 | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 10 | 1 | 5.9% | 0% | 5.7% | 88.4% | Équilibré |
-| 10 | 5 | 64% | 0.1% | 36% | 0% | Fetch Dragonfly |
-| 10 | 10 | 82.3% | 0% | 17.7% | 0% | Fetch Dragonfly |
-| 100 | 1 | 20.7% | 0% | 22.2% | 57.1% | Équilibré |
-| 100 | 5 | 59.1% | 0% | 40.9% | 0% | Fetch Dragonfly |
-| 100 | 10 | 59.8% | 0% | 40.2% | 0% | Fetch Dragonfly |
-| 1,000 | 1 | 25.8% | 0% | 45.4% | 28.8% | Équilibré |
-| 1,000 | 5 | 51.8% | 0% | 48.2% | 0% | Fetch Dragonfly |
-| 1,000 | 10 | 51% | 0% | 49% | 0% | Fetch Dragonfly |
-| 10,000 | 1 | 43.7% | 0% | 49.3% | 7% | Fetch Dragonfly |
-| 10,000 | 5 | 37.9% | 0% | 41.8% | 20.3% | Fetch Dragonfly |
-| 10,000 | 10 | 38.5% | 0% | 41.3% | 20.2% | Fetch Dragonfly |
+| 10 | 1 | 60.6% | 0.1% | 38.9% | 0.4% | Fetch Dragonfly |
+| 10 | 5 | 62.1% | 0.4% | 34.2% | 3.3% | Fetch Dragonfly |
+| 10 | 10 | 63% | 0.5% | 30.8% | 5.7% | Fetch Dragonfly |
+| 100 | 1 | 44.4% | 0% | 45.4% | 10.1% | Fetch Dragonfly |
+| 100 | 5 | 30.9% | 0.3% | 33.9% | 35% | Équilibré |
+| 100 | 10 | 38% | 0.2% | 35.4% | 26.5% | Fetch Dragonfly |
+| 1,000 | 1 | 44.5% | 0% | 50.5% | 5% | ⚠️ ACK complete_job |
+| 1,000 | 5 | 32.1% | 0.2% | 38% | 29.8% | Équilibré |
+| 1,000 | 10 | 50.2% | 0.1% | 49.7% | 0.1% | Fetch Dragonfly |
+| 10,000 | 1 | 47.6% | 0% | 50.2% | 2.2% | ⚠️ ACK complete_job |
+| 10,000 | 5 | 49.9% | 0.1% | 50% | 0% | Fetch Dragonfly |
+| 10,000 | 10 | 37.5% | 0.1% | 39.6% | 22.9% | Fetch Dragonfly |
 
 ## 3. Métriques Serveur & Conteneur DragonflyDB Docker
 
 ```json
 {
-  "id": "1305efcfd6c3",
-  "name": "infallible_heyrovsky",
+  "id": "3f592c6f2ea8",
+  "name": "tender_bardeen",
   "image": "docker.dragonflydb.io/dragonflydb/dragonfly",
-  "status": "Up 6 hours (healthy)",
+  "status": "Up 22 minutes (healthy)",
   "threads": 8
 }
 ```
 
 | Jobs | Concurrence | Commandes Dragonfly | CPU Dragonfly (ms) | Mémoire Finale | Top Commande Sollicitée |
 | :---: | :---: | :---: | :---: | :---: | :--- |
-| 10 | 1 | 128 | 15 ms | 99.69MiB | hset (30 calls, 76.83 µs/op) |
-| 10 | 5 | 150 | 20.7 ms | 99.70MiB | zadd (20 calls, 149.95 µs/op) |
-| 10 | 10 | 158 | 21.04 ms | 99.70MiB | info (5 calls, 2343.6 µs/op) |
-| 100 | 1 | 1,228 | 84.44 ms | 99.72MiB | hset (300 calls, 51.14 µs/op) |
-| 100 | 5 | 1,276 | 75.63 ms | 99.75MiB | hset (300 calls, 53.1 µs/op) |
-| 100 | 10 | 1,294 | 48.82 ms | 99.77MiB | evalsha (240 calls, 55.1 µs/op) |
-| 1,000 | 1 | 12,212 | 279.4 ms | 100.02MiB | evalsha (2099 calls, 39.4 µs/op) |
-| 1,000 | 5 | 12,704 | 310.37 ms | 100.26MiB | evalsha (2345 calls, 49.39 µs/op) |
-| 1,000 | 10 | 12,746 | 322.3 ms | 100.52MiB | evalsha (2366 calls, 40.66 µs/op) |
-| 10,000 | 1 | 125,812 | 3275.14 ms | 103.14MiB | evalsha (22899 calls, 42.64 µs/op) |
-| 10,000 | 5 | 125,806 | 2925.92 ms | 105.75MiB | evalsha (22896 calls, 39.88 µs/op) |
-| 10,000 | 10 | 125,742 | 2512.39 ms | 108.36MiB | zadd (20000 calls, 63.45 µs/op) |
+| 10 | 1 | 134 | 5.65 ms | 2.17MiB | evalsha (26 calls, 36.62 µs/op) |
+| 10 | 5 | 150 | 8.2 ms | 2.17MiB | evalsha (36 calls, 47.53 µs/op) |
+| 10 | 10 | 144 | 6.31 ms | 2.17MiB | evalsha (34 calls, 59.65 µs/op) |
+| 100 | 1 | 1,230 | 35.04 ms | 2.20MiB | zadd (200 calls, 44.08 µs/op) |
+| 100 | 5 | 1,286 | 31.04 ms | 2.22MiB | evalsha (243 calls, 37.11 µs/op) |
+| 100 | 10 | 1,328 | 37.51 ms | 2.24MiB | evalsha (263 calls, 40.47 µs/op) |
+| 1,000 | 1 | 12,488 | 161.75 ms | 2.49MiB | evalsha (2243 calls, 28.89 µs/op) |
+| 1,000 | 5 | 12,582 | 258.14 ms | 2.74MiB | zadd (2000 calls, 43.75 µs/op) |
+| 1,000 | 10 | 12,742 | 527.47 ms | 3.00MiB | evalsha (2371 calls, 58.38 µs/op) |
+| 10,000 | 1 | 126,646 | 3660.92 ms | 5.61MiB | evalsha (23322 calls, 42.96 µs/op) |
+| 10,000 | 5 | 126,669 | 2325.46 ms | 8.22MiB | evalsha (23335 calls, 43.73 µs/op) |
+| 10,000 | 10 | 126,727 | 2571.19 ms | 10.83MiB | evalsha (23364 calls, 39.98 µs/op) |
 
 ## 4. Diagnostic d'Ingénierie & Recommandations d'Amélioration
 1. **Acquittement unitaire vs Pipelined ACK** : Les acquittements unitaires via `complete_job.lua` monopolisent 60% à 75% du temps du worker sous forte charge. Un micro-batching des acquittements (`completeJob` pipeliné sur le même modèle que l'auto-pipelining d'insertion) permettra d'atteindre > 10 000 ops/s.

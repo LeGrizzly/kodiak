@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
 import { Redis } from "ioredis";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import { DragonflyQueueRepository } from "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js";
 
@@ -277,7 +277,7 @@ describe("Integration: DragonflyQueueRepository", () => {
             { maxBatch: 5, maxWaitMs: 2 },
         );
 
-        const addPromises: Promise<void>[] = [];
+        const addPromises: Promise<unknown>[] = [];
         for (let i = 0; i < 15; i++) {
             const { job, score } = createJob(`pipeline-job-${i}`);
             addPromises.push(pipelinedRepo.add(job, score, false));

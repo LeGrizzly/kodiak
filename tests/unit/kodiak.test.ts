@@ -1,30 +1,32 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
-import type { IJobSerializer } from "../src/domain/serializers/job-serializer.interface.js";
-import type { TaskDefinition } from "../src/presentation/task.js";
-import type { WorkerProcessor } from "../src/presentation/worker.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { IJobSerializer } from "../../src/domain/serializers/job-serializer.interface.js";
+import { task } from "../../src/presentation/task.js";
+import type { WorkerProcessor } from "../../src/presentation/worker.js";
 
-const mockQuit = jest.fn().mockResolvedValue(undefined as never);
+const mockQuit = vi.fn().mockResolvedValue(undefined as never);
 const mockRawClient = {
-    duplicate: jest.fn(),
+    duplicate: vi.fn(),
     quit: mockQuit,
 } as unknown as Redis;
-const mockGetRawClient = jest.fn().mockReturnValue(mockRawClient);
+const mockGetRawClient = vi.fn().mockReturnValue(mockRawClient);
 
-jest.unstable_mockModule("../src/infrastructure/dragonfly/dragonfly-connection.js", () => ({
-    DragonflyConnection: jest.fn().mockImplementation(() => ({
-        getRawClient: mockGetRawClient,
-        quit: mockQuit,
-        disconnect: jest.fn(),
-        duplicate: jest.fn(),
-    })),
+vi.doMock("../../src/infrastructure/dragonfly/dragonfly-connection.js", () => ({
+    DragonflyConnection: vi.fn(function MockDragonflyConnection() {
+        return {
+            getRawClient: mockGetRawClient,
+            quit: mockQuit,
+            disconnect: vi.fn(),
+            duplicate: vi.fn(),
+        };
+    }),
 }));
 
-const mockQueueAdd = jest.fn();
-const mockQueueClose = jest.fn().mockResolvedValue(undefined as never);
-const mockQueueConstructor = jest.fn();
-jest.unstable_mockModule("../src/presentation/queue.js", () => ({
-    Queue: jest.fn().mockImplementation((...args: unknown[]) => {
+const mockQueueAdd = vi.fn();
+const mockQueueClose = vi.fn().mockResolvedValue(undefined as never);
+const mockQueueConstructor = vi.fn();
+vi.doMock("../../src/presentation/queue.js", () => ({
+    Queue: vi.fn(function MockQueue(...args: unknown[]) {
         mockQueueConstructor(...args);
         return {
             add: mockQueueAdd,
@@ -33,25 +35,25 @@ jest.unstable_mockModule("../src/presentation/queue.js", () => ({
     }),
 }));
 
-const mockWorkerConstructor = jest.fn();
-jest.unstable_mockModule("../src/presentation/worker.js", () => ({
-    Worker: jest.fn().mockImplementation((...args: unknown[]) => {
+const mockWorkerConstructor = vi.fn();
+vi.doMock("../../src/presentation/worker.js", () => ({
+    Worker: vi.fn(function MockWorker(...args: unknown[]) {
         mockWorkerConstructor(...args);
         return {
-            start: jest.fn(),
-            stop: jest.fn(),
+            start: vi.fn(),
+            stop: vi.fn(),
         };
     }),
 }));
 
-const { Kodiak } = await import("../src/presentation/kodiak.js");
+const { Kodiak } = await import("../../src/presentation/kodiak.js");
 const { MsgpackJobSerializer } = await import(
-    "../src/infrastructure/serializers/msgpack-job.serializer.js"
+    "../../src/infrastructure/serializers/msgpack-job.serializer.js"
 );
 
 describe("Kodiak Facade", () => {
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it("should initialize with default prefix, serializer, and undefined pipelining", () => {
@@ -125,7 +127,7 @@ describe("Kodiak Facade", () => {
             connection: { host: "localhost", port: 6379 },
         });
 
-        const processor: WorkerProcessor<unknown> = jest.fn(async () => {});
+        const processor: WorkerProcessor<unknown> = vi.fn(async () => {});
         const workerOpts = { concurrency: 4, heartbeatEnabled: false };
 
         kodiak.createWorker("jobs-queue", processor, workerOpts);
@@ -144,14 +146,13 @@ describe("Kodiak Facade", () => {
         });
 
         // 1. task with function schema
-        const fnSchemaTask: TaskDefinition<{ email: string }> = {
+        const fnSchemaTask = task<{ email: string }>({
             name: "email-queue",
             schema: (data: unknown) => {
                 const d = data as { email: string };
                 return { email: d.email.toLowerCase() };
             },
-            options: { priority: 2 },
-        };
+        }).priority(2);
         mockQueueAdd.mockResolvedValueOnce({ id: "job-1" } as never);
 
         await kodiak.push(fnSchemaTask, { email: "TEST@EXAMPLE.COM" }, { attempts: 5 });
@@ -163,7 +164,7 @@ describe("Kodiak Facade", () => {
         );
 
         // 2. task with object parse schema
-        const objSchemaTask: TaskDefinition<{ count: number }> = {
+        const objSchemaTask = task<{ count: number }>({
             name: "count-queue",
             schema: {
                 parse: (data: unknown) => {
@@ -171,7 +172,7 @@ describe("Kodiak Facade", () => {
                     return { count: d.count * 2 };
                 },
             },
-        };
+        });
         mockQueueAdd.mockResolvedValueOnce({ id: "job-2" } as never);
 
         await kodiak.push(objSchemaTask, { count: 10 });
@@ -179,9 +180,7 @@ describe("Kodiak Facade", () => {
         expect(mockQueueAdd).toHaveBeenCalledWith(expect.any(String), { count: 20 }, {});
 
         // 3. task without schema
-        const rawTask: TaskDefinition<string> = {
-            name: "raw-queue",
-        };
+        const rawTask = task<string>("raw-queue");
         mockQueueAdd.mockResolvedValueOnce({ id: "job-3" } as never);
 
         await kodiak.push(rawTask, "plain-data");
@@ -194,17 +193,33 @@ describe("Kodiak Facade", () => {
             connection: { host: "localhost", port: 6379 },
         });
 
-        const taskDef: TaskDefinition<string> = {
-            name: "typed-task",
-            options: { priority: 1 },
-        };
-        const processor: WorkerProcessor<string> = jest.fn(async () => {});
+        const taskDef = task<string>("typed-task").priority(1);
+        const processor: WorkerProcessor<string> = vi.fn(async () => {});
 
         kodiak.worker(taskDef, processor, { concurrency: 2 });
 
         expect(mockWorkerConstructor).toHaveBeenCalledWith("typed-task", processor, kodiak, {
             concurrency: 2,
         });
+    });
+
+    it("should inherit rateLimiter from queue configuration when creating worker", () => {
+        const kodiak = new Kodiak({
+            connection: { host: "localhost", port: 6379 },
+        });
+
+        const rateLimiter = { max: 10, duration: 1000, burst: 20 };
+        kodiak.createQueue("rate-limited-queue", { rateLimiter });
+
+        const processor: WorkerProcessor<unknown> = vi.fn(async () => {});
+        kodiak.createWorker("rate-limited-queue", processor, { concurrency: 3 });
+
+        expect(mockWorkerConstructor).toHaveBeenCalledWith(
+            "rate-limited-queue",
+            processor,
+            kodiak,
+            { concurrency: 3, rateLimiter },
+        );
     });
 
     it("should close dragonflyConnection on close()", async () => {

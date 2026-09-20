@@ -1,19 +1,19 @@
-import { describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import { describe, expect, it, vi } from "vitest";
 import { DragonflyConnection } from "../../src/infrastructure/dragonfly/dragonfly-connection.js";
 
 describe("DragonflyConnection", () => {
     it("should wrap an existing Redis client instance", async () => {
         const mockDuplicated = {
-            duplicate: jest.fn(),
-            disconnect: jest.fn(),
-            quit: jest.fn().mockResolvedValue("OK" as never),
+            duplicate: vi.fn(),
+            disconnect: vi.fn(),
+            quit: vi.fn().mockResolvedValue("OK" as never),
         } as unknown as Redis;
 
         const mockClient = {
-            duplicate: jest.fn().mockReturnValue(mockDuplicated),
-            disconnect: jest.fn(),
-            quit: jest.fn().mockResolvedValue("OK" as never),
+            duplicate: vi.fn().mockReturnValue(mockDuplicated),
+            disconnect: vi.fn(),
+            quit: vi.fn().mockResolvedValue("OK" as never),
         } as unknown as Redis;
 
         const connection = new DragonflyConnection(mockClient);

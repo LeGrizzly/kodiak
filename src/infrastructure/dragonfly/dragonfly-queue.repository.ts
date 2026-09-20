@@ -1,8 +1,14 @@
 import type { Redis } from "ioredis";
+import type { RateLimiterOptions } from "../../application/dtos/rate-limiter-options.dto.js";
 import type { Job, JobErrorInfo, JobStatus } from "../../domain/entities/job.entity.js";
 import type {
+    AddJobResult,
     BatchCompletedJob,
+    IDLQRepository,
     IQueueRepository,
+    IRateLimiterRepository,
+    IRateLimitStatus,
+    PipeliningOptions,
 } from "../../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
 import { MsgpackJobSerializer } from "../serializers/msgpack-job.serializer.js";
@@ -10,16 +16,14 @@ import type { IConnection } from "./dragonfly-connection.js";
 import { DragonflyKeyTopology } from "./dragonfly-key-topology.js";
 import { DragonflyScriptManager, type ScriptName } from "./dragonfly-script-manager.js";
 
-export interface PipeliningOptions {
-    maxWaitMs?: number;
-    maxBatch?: number;
-}
+export type { PipeliningOptions } from "../../domain/repositories/queue.repository.js";
 
 interface PendingAdd<T> {
     job: Job<T>;
     score: number;
     isDelayed: boolean;
-    resolve: () => void;
+    deduplication?: { id: string; ttl: number };
+    resolve: (result: AddJobResult) => void;
     reject: (err: Error) => void;
 }
 
@@ -31,13 +35,16 @@ interface PendingComplete {
     reject: (err: Error) => void;
 }
 
-export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
+export class DragonflyQueueRepository<T>
+    implements IQueueRepository<T>, IDLQRepository<T>, IRateLimiterRepository
+{
     public readonly queueName: string;
     private readonly redisClient: Redis;
     private readonly keyTopology: DragonflyKeyTopology;
     private readonly scriptManager: DragonflyScriptManager;
     private readonly serializer: IJobSerializer;
     private readonly pipelining?: PipeliningOptions;
+    private readonly rateLimiter?: RateLimiterOptions;
     private readonly pendingAdds: PendingAdd<T>[] = [];
     private readonly pendingCompletes: PendingComplete[] = [];
     private pipelineFlushScheduled = false;
@@ -49,6 +56,7 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
         prefix = "kodiak",
         serializer?: IJobSerializer,
         pipelining?: PipeliningOptions,
+        rateLimiter?: RateLimiterOptions,
     ) {
         this.queueName = queueName;
         this.redisClient = "getRawClient" in connection ? connection.getRawClient() : connection;
@@ -56,12 +64,18 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
         this.scriptManager = DragonflyScriptManager.getInstance();
         this.serializer = serializer ?? new MsgpackJobSerializer();
         this.pipelining = pipelining;
+        this.rateLimiter = rateLimiter;
     }
 
-    public async add(job: Job<T>, score: number, isDelayed: boolean): Promise<void> {
+    public async add(
+        job: Job<T>,
+        score: number,
+        isDelayed: boolean,
+        deduplication?: { id: string; ttl: number },
+    ): Promise<AddJobResult> {
         if (this.pipelining) {
-            return new Promise<void>((resolve, reject) => {
-                this.pendingAdds.push({ job, score, isDelayed, resolve, reject });
+            return new Promise<AddJobResult>((resolve, reject) => {
+                this.pendingAdds.push({ job, score, isDelayed, deduplication, resolve, reject });
                 const maxBatch = this.pipelining?.maxBatch ?? 200;
                 if (this.pendingAdds.length >= maxBatch) {
                     this.flushPipelinedAdds();
@@ -70,7 +84,7 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
                 }
             });
         }
-        return this.executeAdd(job, score, isDelayed);
+        return this.executeAdd(job, score, isDelayed, deduplication);
     }
 
     private schedulePipelineFlush(): void {
@@ -84,21 +98,52 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
         }
     }
 
-    private async executeAdd(job: Job<T>, score: number, isDelayed: boolean): Promise<void> {
+    private async executeAdd(
+        job: Job<T>,
+        score: number,
+        isDelayed: boolean,
+        deduplication?: { id: string; ttl: number },
+    ): Promise<AddJobResult> {
         const jobKey = this.keyTopology.jobKey(job.id);
         const jobFields = this.createJobFields(job);
 
-        await this.scriptManager.execute(
-            this.redisClient,
-            "add_job",
-            [
-                this.keyTopology.waitingKey,
-                this.keyTopology.delayedKey,
-                jobKey,
-                this.keyTopology.notifyKey,
-            ],
-            [job.id, String(score), isDelayed ? "1" : "0", ...jobFields],
-        );
+        const keys = [
+            this.keyTopology.waitingKey,
+            this.keyTopology.delayedKey,
+            jobKey,
+            this.keyTopology.notifyKey,
+        ];
+
+        let args: (string | number)[];
+
+        if (deduplication?.id) {
+            const dedupKey = this.keyTopology.dedupKey(deduplication.id);
+            keys.push(dedupKey);
+            args = [
+                job.id,
+                String(score),
+                isDelayed ? "1" : "0",
+                String(deduplication.ttl),
+                ...jobFields,
+            ];
+        } else {
+            args = [job.id, String(score), isDelayed ? "1" : "0", ...jobFields];
+        }
+
+        const res = (await this.scriptManager.execute(this.redisClient, "add_job", keys, args)) as
+            | [number, string]
+            | string
+            | undefined;
+
+        let isDuplicate = false;
+        let finalJobId = job.id;
+
+        if (Array.isArray(res)) {
+            isDuplicate = res[0] === 0;
+            finalJobId = String(res[1]);
+        }
+
+        return { isDuplicate, jobId: finalJobId };
     }
 
     private flushPipelinedAdds(): void {
@@ -117,7 +162,20 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
                 jobKey,
                 this.keyTopology.notifyKey,
             ];
-            const args = [item.job.id, String(item.score), item.isDelayed ? "1" : "0", ...fields];
+            let args: (string | number)[];
+            if (item.deduplication?.id) {
+                const dedupKey = this.keyTopology.dedupKey(item.deduplication.id);
+                keys.push(dedupKey);
+                args = [
+                    item.job.id,
+                    String(item.score),
+                    item.isDelayed ? "1" : "0",
+                    String(item.deduplication.ttl),
+                    ...fields,
+                ];
+            } else {
+                args = [item.job.id, String(item.score), item.isDelayed ? "1" : "0", ...fields];
+            }
             this.appendScriptToPipeline(pipeline, "add_job", keys, args);
         }
 
@@ -188,7 +246,14 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
             if (res?.[0]) {
                 item.reject(res[0]);
             } else {
-                item.resolve();
+                let isDuplicate = false;
+                let finalJobId = item.job.id;
+                const value = res?.[1];
+                if (Array.isArray(value)) {
+                    isDuplicate = value[0] === 0;
+                    finalJobId = String(value[1]);
+                }
+                item.resolve({ isDuplicate, jobId: finalJobId });
             }
         }
     }
@@ -236,6 +301,16 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
     }
 
     public async fetchNext(timeout?: number): Promise<Job<T> | null> {
+        if (this.rateLimiter) {
+            const allowed = await this.consumeRateLimit(1);
+            if (!allowed) {
+                if (this.rateLimiter.onExceeded !== "reject") {
+                    await this.moveWaitingToDelayedWithDelay(this.rateLimiter.retryDelay ?? 500);
+                }
+                return null;
+            }
+        }
+
         const now = Date.now();
         const rawOptimistic = await this.scriptManager.execute(
             this.redisClient,
@@ -324,6 +399,16 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
         lockDuration: number,
         ownerToken?: string,
     ): Promise<Job<T>[]> {
+        if (this.rateLimiter) {
+            const allowed = await this.consumeRateLimit(count);
+            if (!allowed) {
+                if (this.rateLimiter.onExceeded !== "reject") {
+                    await this.moveWaitingToDelayedWithDelay(this.rateLimiter.retryDelay ?? 500);
+                }
+                return [];
+            }
+        }
+
         const now = Date.now();
         const lockExpiresAt = now + lockDuration;
 
@@ -560,6 +645,82 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
         return Number(res) === 1;
     }
 
+    public async getFailedCount(): Promise<number> {
+        return this.redisClient.zcard(this.keyTopology.deadKey);
+    }
+
+    public async getFailedJobs(start = 0, limit = 20): Promise<Job<T>[]> {
+        const stop = start + limit - 1;
+        const jobIds = await this.redisClient.zrevrange(this.keyTopology.deadKey, start, stop);
+        if (!jobIds || jobIds.length === 0) return [];
+
+        const pipeline = this.redisClient.pipeline();
+        for (const jobId of jobIds) {
+            pipeline.hgetall(this.keyTopology.jobKey(jobId));
+        }
+
+        const results = await pipeline.exec();
+        if (!results) return [];
+
+        const now = Date.now();
+        const jobs: Job<T>[] = [];
+        for (let i = 0; i < results.length; i++) {
+            const entry = results[i];
+            if (!entry) continue;
+            const [err, record] = entry as [Error | null, Record<string, string>];
+            const jobId = jobIds[i];
+            if (!err && record && jobId) {
+                const job = this.buildJobFromRecord(jobId, record, now);
+                if (job) jobs.push(job);
+            }
+        }
+        return jobs;
+    }
+
+    public async retryJob(jobId: string): Promise<boolean> {
+        const jobKey = this.keyTopology.jobKey(jobId);
+        const now = Date.now();
+        const res = await this.scriptManager.execute(
+            this.redisClient,
+            "retry_failed_job",
+            [
+                this.keyTopology.deadKey,
+                this.keyTopology.waitingKey,
+                this.keyTopology.notifyKey,
+                jobKey,
+            ],
+            [jobId, String(now)],
+        );
+        return Number(res) === 1;
+    }
+
+    public async retryAllFailed(limit = 100): Promise<number> {
+        const jobIds = await this.redisClient.zrange(
+            this.keyTopology.deadKey,
+            0,
+            String(limit - 1),
+        );
+        if (!jobIds || jobIds.length === 0) return 0;
+
+        let retriedCount = 0;
+        for (const jobId of jobIds) {
+            const success = await this.retryJob(jobId);
+            if (success) retriedCount++;
+        }
+        return retriedCount;
+    }
+
+    public async cleanFailed(olderThanMs = 0): Promise<number> {
+        const maxTimestamp = olderThanMs > 0 ? String(Date.now() - olderThanMs) : "+inf";
+        const res = await this.scriptManager.execute(
+            this.redisClient,
+            "clean_failed_jobs",
+            [this.keyTopology.deadKey],
+            [maxTimestamp, this.keyTopology.jobKeyPrefix, "500"],
+        );
+        return Number(res) || 0;
+    }
+
     private buildJobFromRaw(jobId: string, raw: string[] | null, now: number): Job<T> | null {
         if (!raw || raw.length === 0) return null;
         const record: Record<string, string> = {};
@@ -608,5 +769,82 @@ export class DragonflyQueueRepository<T> implements IQueueRepository<T> {
                 await this.updateProgress(jobId, progress);
             },
         };
+    }
+
+    public async consumeRateLimit(count = 1): Promise<boolean> {
+        if (!this.rateLimiter) return true;
+        const now = Date.now();
+        const max = this.rateLimiter.max ?? this.rateLimiter.rate ?? 100;
+        const duration = this.rateLimiter.duration ?? 1000;
+        const capacity = this.rateLimiter.burst ?? this.rateLimiter.capacity ?? max;
+        const refillRatePerMs = max / duration;
+
+        const raw = await this.scriptManager.execute(
+            this.redisClient,
+            "token_bucket",
+            [this.keyTopology.rateLimitKey],
+            [String(capacity), String(refillRatePerMs), String(now), String(count)],
+        );
+
+        if (Array.isArray(raw)) {
+            return Number(raw[0]) === 1;
+        }
+        return Number(raw) === 1;
+    }
+
+    public async getRateLimitStatus(): Promise<IRateLimitStatus | null> {
+        if (!this.rateLimiter) return null;
+        const now = Date.now();
+        const max = this.rateLimiter.max ?? this.rateLimiter.rate ?? 100;
+        const duration = this.rateLimiter.duration ?? 1000;
+        const capacity = this.rateLimiter.burst ?? this.rateLimiter.capacity ?? max;
+        const refillRatePerMs = max / duration;
+
+        const raw = await this.scriptManager.execute(
+            this.redisClient,
+            "token_bucket",
+            [this.keyTopology.rateLimitKey],
+            [String(capacity), String(refillRatePerMs), String(now), "0"],
+        );
+
+        let tokens = capacity;
+        let delayNeededMs = 0;
+        if (Array.isArray(raw)) {
+            tokens = Number(raw[1]);
+            delayNeededMs = Number(raw[2]);
+        }
+
+        return {
+            tokens,
+            max: capacity,
+            duration,
+            resetAt: delayNeededMs > 0 ? new Date(now + delayNeededMs) : new Date(now),
+        };
+    }
+
+    private async moveWaitingToDelayedWithDelay(delayMs: number): Promise<string | null> {
+        try {
+            const now = Date.now();
+            const nextAttempt = now + Math.max(0, delayMs);
+            const res = await this.scriptManager.execute(
+                this.redisClient,
+                "move_waiting_to_delayed",
+                [this.keyTopology.waitingKey, this.keyTopology.delayedKey],
+                [String(nextAttempt)],
+            );
+            if (!res) return null;
+            if (Array.isArray(res) && res[0]) {
+                return String(res[0]);
+            }
+            return String(res);
+        } catch {
+            return null;
+        }
+    }
+
+    public async deleteDeduplicationKey(dedupId: string): Promise<boolean> {
+        const key = this.keyTopology.dedupKey(dedupId);
+        const deleted = await this.redisClient.del(key);
+        return deleted > 0;
     }
 }

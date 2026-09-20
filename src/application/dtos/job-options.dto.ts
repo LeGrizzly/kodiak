@@ -1,3 +1,5 @@
+import type { DeduplicationOptions } from "../../domain/repositories/queue.repository.js";
+
 /**
  * Backoff configuration for retries.
  */
@@ -178,4 +180,42 @@ export interface JobOptions {
      * Example: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
      */
     traceparent?: string;
+
+    /**
+     * Deduplication and idempotency configuration.
+     *
+     * Optional.
+     *
+     * Examples:
+     * - true (automatic SHA-256 payload content hash with default 60s window)
+     * - { id: "order-123", ttl: 300000, strategy: "ignore-if-exists" }
+     * - { ttl: 60000, strategy: "throw" }
+     */
+    deduplication?: boolean | DeduplicationOptions;
+
+    /**
+     * Override queue default: automatically remove this job from Redis upon successful completion.
+     *
+     * Optional. Defaults to queue-level removeOnSuccess setting.
+     *
+     * Example:
+     * ```ts
+     * const opts: JobOptions = { removeOnSuccess: true };
+     * ```
+     */
+    removeOnSuccess?: boolean;
+
+    /**
+     * Override queue default: automatically remove this job from Redis upon exhausting all retries.
+     *
+     * Optional. Defaults to queue-level removeOnFailure setting.
+     *
+     * Example:
+     * ```ts
+     * const opts: JobOptions = { removeOnFailure: true };
+     * ```
+     */
+    removeOnFailure?: boolean;
 }
+
+export type { DeduplicationOptions } from "../../domain/repositories/queue.repository.js";

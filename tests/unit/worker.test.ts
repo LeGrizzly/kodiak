@@ -1,45 +1,59 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type { Redis } from "ioredis";
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    type Mock,
+    type MockedFunction,
+    vi,
+} from "vitest";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
-const mockFetchExecute = jest.fn();
-const mockCompleteExecute = jest.fn();
-const mockCompleteManyExecute = jest.fn();
-const mockFailExecute = jest.fn();
+const mockFetchExecute = vi.fn();
+const mockCompleteExecute = vi.fn();
+const mockCompleteManyExecute = vi.fn();
+const mockFailExecute = vi.fn();
 
-const mockExtendLock = jest.fn().mockResolvedValue(true as never);
-const mockReleaseJobs = jest.fn().mockResolvedValue(undefined as never);
+const mockExtendLock = vi.fn().mockResolvedValue(true as never);
+const mockReleaseJobs = vi.fn().mockResolvedValue(undefined as never);
 
-jest.unstable_mockModule(
-    "../../src/infrastructure/dragonfly/dragonfly-queue.repository.js",
-    () => ({
-        DragonflyQueueRepository: jest.fn().mockImplementation(() => ({
-            updateProgress: jest.fn().mockResolvedValue(undefined as never),
-            fetchNextJobs: jest.fn(),
+vi.doMock("../../src/infrastructure/dragonfly/dragonfly-queue.repository.js", () => ({
+    DragonflyQueueRepository: vi.fn(function MockDragonflyQueueRepository() {
+        return {
+            updateProgress: vi.fn().mockResolvedValue(undefined as never),
+            fetchNextJobs: vi.fn(),
             releaseJobs: mockReleaseJobs,
             extendLock: mockExtendLock,
-        })),
+        };
     }),
-);
-
-jest.unstable_mockModule("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
-    FetchJobsUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockFetchExecute,
-    })),
 }));
 
-jest.unstable_mockModule("../../src/application/use-cases/complete-job.use-case.js", () => ({
-    CompleteJobUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockCompleteExecute,
-        executeMany: mockCompleteManyExecute,
-    })),
+vi.doMock("../../src/application/use-cases/fetch-jobs.use-case.js", () => ({
+    FetchJobsUseCase: vi.fn(function MockFetchJobsUseCase() {
+        return {
+            execute: mockFetchExecute,
+        };
+    }),
 }));
 
-jest.unstable_mockModule("../../src/application/use-cases/fail-job.use-case.js", () => ({
-    FailJobUseCase: jest.fn().mockImplementation(() => ({
-        execute: mockFailExecute,
-    })),
+vi.doMock("../../src/application/use-cases/complete-job.use-case.js", () => ({
+    CompleteJobUseCase: vi.fn(function MockCompleteJobUseCase() {
+        return {
+            execute: mockCompleteExecute,
+            executeMany: mockCompleteManyExecute,
+        };
+    }),
+}));
+
+vi.doMock("../../src/application/use-cases/fail-job.use-case.js", () => ({
+    FailJobUseCase: vi.fn(function MockFailJobUseCase() {
+        return {
+            execute: mockFailExecute,
+        };
+    }),
 }));
 
 const { Worker } = await import("../../src/presentation/worker.js");
@@ -51,24 +65,24 @@ const { FailJobUseCase } = await import("../../src/application/use-cases/fail-jo
 
 describe("Worker", () => {
     let mockKodiak: Kodiak;
-    let processor: jest.MockedFunction<(job: unknown) => Promise<void>>;
+    let processor: MockedFunction<(job: unknown) => Promise<void>>;
 
     beforeEach(() => {
         const mockRedisConnection = {
-            duplicate: jest.fn().mockReturnThis(),
-            quit: jest.fn(),
-            disconnect: jest.fn(),
-            brpop: jest.fn(),
+            duplicate: vi.fn().mockReturnThis(),
+            quit: vi.fn(),
+            disconnect: vi.fn(),
+            brpop: vi.fn(),
         };
         mockKodiak = {
             connection: mockRedisConnection as unknown as Redis,
             prefix: "kodiak-test",
         } as unknown as Kodiak;
-        processor = jest.fn() as jest.MockedFunction<(job: unknown) => Promise<void>>;
+        processor = vi.fn() as MockedFunction<(job: unknown) => Promise<void>>;
 
-        (FetchJobsUseCase as unknown as jest.Mock).mockClear();
-        (CompleteJobUseCase as unknown as jest.Mock).mockClear();
-        (FailJobUseCase as unknown as jest.Mock).mockClear();
+        (FetchJobsUseCase as unknown as Mock).mockClear();
+        (CompleteJobUseCase as unknown as Mock).mockClear();
+        (FailJobUseCase as unknown as Mock).mockClear();
 
         mockFetchExecute.mockReset();
         mockFetchExecute.mockImplementation(async () => {
@@ -105,8 +119,8 @@ describe("Worker", () => {
     });
 
     afterEach(() => {
-        jest.clearAllMocks();
-        jest.useRealTimers();
+        vi.clearAllMocks();
+        vi.useRealTimers();
     });
 
     it("should create a worker instance", () => {
@@ -115,13 +129,13 @@ describe("Worker", () => {
     });
 
     it("should emit start event when started", async () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const worker = new Worker("test-queue", processor, mockKodiak);
-        const startEmitter = jest.fn();
+        const startEmitter = vi.fn();
         worker.on("start", startEmitter);
 
         await worker.start();
-        await jest.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(100);
 
         expect(startEmitter).toHaveBeenCalled();
 
@@ -129,13 +143,13 @@ describe("Worker", () => {
     });
 
     it("should emit stop event when stopped", async () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const worker = new Worker("test-queue", processor, mockKodiak);
-        const stopEmitter = jest.fn();
+        const stopEmitter = vi.fn();
         worker.on("stop", stopEmitter);
 
         await worker.start();
-        await jest.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(100);
         await worker.stop();
 
         expect(stopEmitter).toHaveBeenCalled();
@@ -143,7 +157,7 @@ describe("Worker", () => {
 
     it("should process a job and emit completed event on success", async () => {
         const worker = new Worker<{ message: string }>("test-queue", processor, mockKodiak);
-        const completedEmitter = jest.fn();
+        const completedEmitter = vi.fn();
         worker.on("completed", completedEmitter);
 
         const mockJob = createMockJob({
@@ -172,7 +186,7 @@ describe("Worker", () => {
 
     it("should process a job and emit failed event on error", async () => {
         const worker = new Worker<{ message: string }>("test-queue", processor, mockKodiak);
-        const failedEmitter = jest.fn();
+        const failedEmitter = vi.fn();
         worker.on("failed", failedEmitter);
 
         const mockJob = createMockJob({
@@ -261,7 +275,7 @@ describe("Worker", () => {
 
     it("should handle non-Error objects thrown by processor", async () => {
         const worker = new Worker("test-queue", processor, mockKodiak);
-        const failedEmitter = jest.fn();
+        const failedEmitter = vi.fn();
         worker.on("failed", failedEmitter);
 
         const mockJob = createMockJob({
@@ -296,19 +310,19 @@ describe("Worker", () => {
     });
 
     it("should update progress and emit progress event", async () => {
-        const progressEmitter = jest.fn();
+        const progressEmitter = vi.fn();
         const mockJob = createMockJob({
             id: "job-progress",
             data: { message: "test" },
             priority: 10,
         });
 
-        const processorWithProgress = jest.fn().mockImplementation(async (job: unknown) => {
+        const processorWithProgress = vi.fn().mockImplementation(async (job: unknown) => {
             const j = job as Job<{ message: string }>;
             if (j.updateProgress) {
                 await j.updateProgress(50);
             }
-        }) as jest.MockedFunction<(job: unknown) => Promise<void>>;
+        }) as MockedFunction<(job: unknown) => Promise<void>>;
 
         const worker = new Worker<{ message: string }>(
             "test-queue",
@@ -331,8 +345,8 @@ describe("Worker", () => {
     });
 
     it("should handle graceful shutdown timeout", async () => {
-        jest.useFakeTimers();
-        const errorEmitter = jest.fn();
+        vi.useFakeTimers();
+        const errorEmitter = vi.fn();
         const worker = new Worker("test-queue", processor, mockKodiak, {
             gracefulShutdownTimeout: 10,
         });
@@ -346,7 +360,7 @@ describe("Worker", () => {
         });
 
         await worker.start();
-        await jest.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(50);
         await worker.stop();
 
         expect(errorEmitter).toHaveBeenCalledWith(
@@ -358,8 +372,8 @@ describe("Worker", () => {
         const disconnectError = new Error("Disconnect failed");
 
         const mockRedisConnection = {
-            duplicate: jest.fn().mockReturnThis(),
-            disconnect: jest.fn().mockImplementation(() => {
+            duplicate: vi.fn().mockReturnThis(),
+            disconnect: vi.fn().mockImplementation(() => {
                 throw disconnectError;
             }),
         };
@@ -368,7 +382,7 @@ describe("Worker", () => {
             mockRedisConnection as unknown as Redis;
 
         const worker = new Worker("test-queue", processor, mockKodiak);
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         worker.on("error", errorEmitter);
 
         await worker.start();
@@ -379,15 +393,15 @@ describe("Worker", () => {
     });
 
     it("should emit error if getJob fails", async () => {
-        jest.useFakeTimers();
-        const errorEmitter = jest.fn();
+        vi.useFakeTimers();
+        const errorEmitter = vi.fn();
         const testError = new Error("Fetch failed");
         const worker = new Worker("test-queue", processor, mockKodiak);
         worker.on("error", errorEmitter);
         mockFetchExecute.mockRejectedValueOnce(testError as never);
 
         await worker.start();
-        await jest.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(100);
         expect(errorEmitter).toHaveBeenCalledWith(testError);
         await worker.stop();
     });
@@ -436,17 +450,17 @@ describe("Worker", () => {
         const disconnectError = new Error("ACK Disconnect failed");
 
         const mockAckConnection = {
-            disconnect: jest.fn(() => {
+            disconnect: vi.fn(() => {
                 throw disconnectError;
             }),
         };
-        const mockBlockingConnection = { disconnect: jest.fn() };
-        (mockKodiak.connection.duplicate as jest.Mock)
+        const mockBlockingConnection = { disconnect: vi.fn() };
+        (mockKodiak.connection.duplicate as Mock)
             .mockReturnValueOnce(mockAckConnection)
             .mockReturnValueOnce(mockBlockingConnection);
 
         const worker = new Worker("test-queue", processor, mockKodiak);
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         worker.on("error", errorEmitter);
         await worker.stop();
 
@@ -470,7 +484,7 @@ describe("Worker", () => {
     });
 
     it("should ignore non-Error objects thrown in main process loop", async () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         const nonError = "some string error";
 
         mockFetchExecute.mockRejectedValueOnce(nonError as never);
@@ -492,7 +506,7 @@ describe("Worker", () => {
             ackPipelining: { maxBatch: 1, maxWaitMs: 0 },
         });
 
-        const completedEmitter = jest.fn();
+        const completedEmitter = vi.fn();
         worker.on("completed", completedEmitter);
 
         const mockJob = createMockJob({ id: "job-pipeline-1", data: { message: "pipelined" } });
@@ -588,7 +602,7 @@ describe("Worker", () => {
             }
         });
 
-        const progressEmitter = jest.fn();
+        const progressEmitter = vi.fn();
         const worker = new Worker("test-queue", processor, mockKodiak);
         worker.on("progress", progressEmitter);
 
@@ -614,7 +628,7 @@ describe("Worker", () => {
     });
 
     it("should forward ackBuffer onError to worker error event", async () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         const ackError = new Error("Pipelined ack failed");
         mockCompleteManyExecute.mockRejectedValueOnce(ackError as never);
 
@@ -651,7 +665,7 @@ describe("Worker", () => {
     });
 
     it("should emit error if releaseJobs fails during stop with unconsumed jobs", async () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         mockReleaseJobs.mockRejectedValueOnce(new Error("Release unconsumed failed") as never);
 
         const worker = new Worker("test-queue", processor, mockKodiak);
@@ -667,7 +681,7 @@ describe("Worker", () => {
     });
 
     it("should emit error if disconnectSafe catches an error", () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         const worker = new Worker("test-queue", processor, mockKodiak);
         worker.on("error", errorEmitter);
 
@@ -687,7 +701,7 @@ describe("Worker", () => {
     });
 
     it("should emit error when processSlotLoop encounters an Error in main loop", async () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         mockFetchExecute.mockRejectedValueOnce(new Error("Fetch failed in loop") as never);
 
         const worker = new Worker("test-queue", processor, mockKodiak);
@@ -725,21 +739,21 @@ describe("Worker", () => {
 
         // 1. mockFetchExecute returning null (falsy jobs -> fetchedCount = 0)
         (
-            mockFetchExecute as jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>
+            mockFetchExecute as MockedFunction<(...args: unknown[]) => Promise<unknown>>
         ).mockResolvedValueOnce(null);
         const resNull = await workerInternal.getJob(0, "tok");
         expect(resNull).toBeNull();
 
         // 2. mockFetchExecute returning [undefined] (triggers return job ?? null)
         (
-            mockFetchExecute as jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>
+            mockFetchExecute as MockedFunction<(...args: unknown[]) => Promise<unknown>>
         ).mockResolvedValueOnce([undefined]);
         const resUndef = await workerInternal.getJob(0, "tok");
         expect(resUndef).toBeNull();
     });
 
     it("should handle undefined elements during releaseUnconsumedJobs and non-Error in stop", async () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         const worker = new Worker("test-queue", processor, mockKodiak);
         worker.on("error", errorEmitter);
 
@@ -761,7 +775,7 @@ describe("Worker", () => {
     });
 
     it("should suppress AbortError during graceful shutdown stop()", async () => {
-        const errorEmitter = jest.fn();
+        const errorEmitter = vi.fn();
         const worker = new Worker("test-queue", processor, mockKodiak);
         worker.on("error", errorEmitter);
 
@@ -776,5 +790,33 @@ describe("Worker", () => {
         await worker.stop();
 
         expect(errorEmitter).not.toHaveBeenCalled();
+    });
+
+    it("should steal jobs from another slot buffer when current slot buffer is empty", async () => {
+        const worker = new Worker("test-queue", processor, mockKodiak, { concurrency: 3 });
+        const job = createMockJob({ id: "stolen-job" });
+        worker.jobBuffers.set(0, []);
+        worker.jobBuffers.set(1, []);
+        worker.jobBuffers.set(2, [job]);
+
+        const stolen = await worker.getJob(1, "tok-1");
+        expect(stolen?.id).toBe("stolen-job");
+        expect(worker.jobBuffers.get(2)).toHaveLength(0);
+    });
+
+    it("should distribute remaining fetched jobs to other slots when concurrency > 1", async () => {
+        const worker = new Worker("test-queue", processor, mockKodiak, { concurrency: 2 });
+        const job1 = createMockJob({ id: "job-1" });
+        const job2 = createMockJob({ id: "job-2" });
+        const job3 = createMockJob({ id: "job-3" });
+
+        (
+            mockFetchExecute as MockedFunction<(...args: unknown[]) => Promise<unknown>>
+        ).mockResolvedValueOnce([job1, job2, job3]);
+
+        const firstJob = await worker.getJob(0, "tok-0");
+        expect(firstJob?.id).toBe("job-1");
+        expect(worker.jobBuffers.get(1)?.map((j) => j?.id)).toEqual(["job-2"]);
+        expect(worker.jobBuffers.get(0)?.map((j) => j?.id)).toEqual(["job-3"]);
     });
 });

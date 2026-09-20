@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, vi } from "vitest";
 import { CreditFlowController } from "../../src/application/flow-control/credit-flow-controller.js";
 
 describe("CreditFlowController", () => {
@@ -27,7 +27,7 @@ describe("CreditFlowController", () => {
     });
 
     it("should replenish credits upon ACK / NACK and notify replenisher", () => {
-        const onReplenish = jest.fn();
+        const onReplenish = vi.fn();
         const controller = new CreditFlowController({
             maxCredits: 50,
             replenishBatchThreshold: 10,

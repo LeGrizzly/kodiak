@@ -1,23 +1,23 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import { PromoteDelayedJobsUseCase } from "../../src/application/use-cases/promote-delayed-jobs.use-case.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("PromoteDelayedJobsUseCase", () => {
     let promoteDelayedJobsUseCase: PromoteDelayedJobsUseCase<unknown>;
-    let mockQueueRepository: jest.Mocked<IQueueRepository<unknown>>;
+    let mockQueueRepository: Mocked<IQueueRepository<unknown>>;
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            markAsCompleted: jest.fn(),
-            markAsFailed: jest.fn(),
-            updateProgress: jest.fn(),
-            fetchNextJobs: jest.fn(),
-            promoteDelayedJobs: jest.fn(),
-            recoverStalledJobs: jest.fn(),
-            extendLock: jest.fn(),
-        } as unknown as jest.Mocked<IQueueRepository<unknown>>;
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            markAsCompleted: vi.fn(),
+            markAsFailed: vi.fn(),
+            updateProgress: vi.fn(),
+            fetchNextJobs: vi.fn(),
+            promoteDelayedJobs: vi.fn(),
+            recoverStalledJobs: vi.fn(),
+            extendLock: vi.fn(),
+        } as unknown as Mocked<IQueueRepository<unknown>>;
 
         promoteDelayedJobsUseCase = new PromoteDelayedJobsUseCase(mockQueueRepository);
     });

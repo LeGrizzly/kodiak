@@ -1,4 +1,5 @@
 import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import type { Job } from "../../src/domain/entities/job.entity.js";
 import { Kodiak } from "../../src/presentation/kodiak.js";
@@ -167,33 +168,38 @@ function printDebugReport(res: ScenarioResult): void {
 }
 
 async function runScenario(
-    kodiak: Kodiak,
-    monitor: DragonflyMonitor,
     jobCount: number,
     concurrency: number,
     isDebug: boolean,
     isPipelined = true,
 ): Promise<ScenarioResult> {
+    const kodiak = new Kodiak({
+        connection: { host: "127.0.0.1", port: 6379 },
+        pipelining: isPipelined ? { maxBatch: 100, maxWaitMs: 0 } : undefined,
+    });
+    const monitor = new DragonflyMonitor(kodiak.connection);
     const queueName = `bench-${jobCount}-${concurrency}-${Date.now()}`;
-    const queue = kodiak.createQueue<Payload>(queueName);
+    const queue = kodiak.queueBuilder<Payload>(queueName).create();
 
     const latencies: LatencySample[] = [];
     let completed = 0;
 
-    const worker = kodiak.createWorker<Payload>(
-        queueName,
-        async () => {
+    const worker = kodiak
+        .workerBuilder<Payload>(queueName)
+        .handler(async () => {
             // Minimal handler
             return;
-        },
-        {
-            concurrency,
-            prefetch: "auto",
-            ackPipelining: isPipelined ? { maxBatch: 50, maxWaitMs: 2 } : false,
-            telemetry: true,
-        },
-    );
+        })
+        .concurrency(concurrency)
+        .prefetch("auto")
+        .ackPipelining(isPipelined ? { maxBatch: 100, maxWaitMs: 0 } : false)
+        .telemetry(true)
+        .create();
 
+
+    worker.on("error", () => {
+        // Ignore expected connection close errors during shutdown
+    });
 
     worker.on("completed", (job: Job<Payload>) => {
         completed++;
@@ -366,7 +372,7 @@ function generateMarkdownReport(results: ScenarioResult[], containerInfo: unknow
 async function main() {
     const args = process.argv.slice(2);
     const isDebug = args.includes("--debug") || process.env.DEBUG === "1";
-    const isPipelined = args.includes("--pipelined");
+    const isPipelined = !args.includes("--no-pipelined");
 
     const jobsArg = args.find((a) => a.startsWith("--jobs="));
     const concArg = args.find((a) => a.startsWith("--concurrency="));
@@ -374,13 +380,12 @@ async function main() {
     const targetJobs = jobsArg ? [Number(jobsArg.split("=")[1])] : [10, 100, 1_000, 10_000];
     const targetConcurrencies = concArg ? [Number(concArg.split("=")[1])] : [1, 5, 10];
 
-    const kodiak = new Kodiak({
+    const tempKodiak = new Kodiak({
         connection: { host: "127.0.0.1", port: 6379 },
-        pipelining: isPipelined ? { maxBatch: 100, maxWaitMs: 1 } : undefined,
     });
-
-    const monitor = new DragonflyMonitor(kodiak.connection);
+    const monitor = new DragonflyMonitor(tempKodiak.connection);
     const containerInfo = monitor.getContainerInfo();
+    await tempKodiak.close();
 
     console.log("🐾 Démarrage de la suite de Benchmarks Kodiak...");
     if (containerInfo) {
@@ -391,7 +396,7 @@ async function main() {
         console.log(`ℹ️  Instance DragonflyDB active sur 127.0.0.1:6379`);
     }
 
-    if (isPipelined) console.log("⚡ Mode Auto-Pipelining ACTIF (maxBatch: 100, maxWaitMs: 1)");
+    if (isPipelined) console.log("⚡ Mode Auto-Pipelining ACTIF (maxBatch: 100, maxWaitMs: 0)");
     if (isDebug)
         console.log("🔍 Mode DEBUG ACTIF : Collecte fine des latences et monitoring Dragonfly");
 
@@ -401,9 +406,8 @@ async function main() {
     for (const jobs of targetJobs) {
         for (const c of targetConcurrencies) {
             if (!isDebug) console.log(`Running benchmark: jobs=${jobs} concurrency=${c}`);
-            const res = await runScenario(kodiak, monitor, jobs, c, isDebug, isPipelined);
+            const res = await runScenario(jobs, c, isDebug, isPipelined);
             results.push(res);
-
         }
     }
 
@@ -423,12 +427,10 @@ async function main() {
     console.log(`Temps total d'exécution : ${totalElapsedMs} ms`);
 
     const mdReport = generateMarkdownReport(results, containerInfo);
-    writeFileSync("benchmark/benchmark_kodiak/BENCHMARK_ANALYSIS.md", mdReport, "utf-8");
-    console.log(
-        `📄 Rapport complet sauvegardé dans benchmark/benchmark_kodiak/BENCHMARK_ANALYSIS.md`,
-    );
+    const reportPath = resolve(import.meta.dirname, "BENCHMARK_ANALYSIS.md");
+    writeFileSync(reportPath, mdReport, "utf-8");
+    console.log(`📄 Rapport complet sauvegardé dans ${reportPath}`);
 
-    await kodiak.close();
     process.exit(0);
 }
 

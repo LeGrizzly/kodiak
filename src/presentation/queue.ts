@@ -1,18 +1,45 @@
 import { EventEmitter } from "node:events";
+import {
+    type JobOptionsBuilder,
+    resolveJobOptions,
+} from "../application/dtos/job-options.builder.js";
 import type { JobOptions } from "../application/dtos/job-options.dto.js";
+import type { QueueOptions } from "../application/dtos/queue-options.dto.js";
+import type { RateLimiterOptions } from "../application/dtos/rate-limiter-options.dto.js";
 import { AddJobUseCase } from "../application/use-cases/add-job.use-case.js";
+import { CleanFailedJobsUseCase } from "../application/use-cases/clean-failed-jobs.use-case.js";
+import { ConsumeRateLimitUseCase } from "../application/use-cases/consume-rate-limit.use-case.js";
+import { GetFailedCountUseCase } from "../application/use-cases/get-failed-count.use-case.js";
+import { GetFailedJobsUseCase } from "../application/use-cases/get-failed-jobs.use-case.js";
+import { GetRateLimitStatusUseCase } from "../application/use-cases/get-rate-limit-status.use-case.js";
+import { RetryFailedJobUseCase } from "../application/use-cases/retry-failed-job.use-case.js";
 import type { Job } from "../domain/entities/job.entity.js";
-import type { IQueueRepository } from "../domain/repositories/queue.repository.js";
+import type {
+    DeduplicationOptions,
+    IDLQRepository,
+    IQueueRepository,
+    IRateLimiterRepository,
+    IRateLimitStatus,
+} from "../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
 import {
     DragonflyQueueRepository,
     type PipeliningOptions,
 } from "../infrastructure/dragonfly/dragonfly-queue.repository.js";
+import { JobBuilder } from "./job-builder.js";
 import type { Kodiak } from "./kodiak.js";
 
 export class Queue<T> extends EventEmitter {
     private readonly addJobUseCase: AddJobUseCase<T>;
+    private readonly getFailedCountUseCase: GetFailedCountUseCase<T>;
+    private readonly getFailedJobsUseCase: GetFailedJobsUseCase<T>;
+    private readonly retryFailedJobUseCase: RetryFailedJobUseCase<T>;
+    private readonly cleanFailedJobsUseCase: CleanFailedJobsUseCase<T>;
+    private readonly consumeRateLimitUseCase: ConsumeRateLimitUseCase;
+    private readonly getRateLimitStatusUseCase: GetRateLimitStatusUseCase;
     private readonly queueRepository: IQueueRepository<T>;
+    private readonly defaultDeduplication?: boolean | DeduplicationOptions;
+    public readonly options: QueueOptions;
     private schedulerInterval: NodeJS.Timeout | null = null;
     private recoveringStalledJobs = false;
     private readonly connection: { quit: () => Promise<unknown> };
@@ -21,30 +48,123 @@ export class Queue<T> extends EventEmitter {
         public readonly name: string,
         private readonly kodiak: Kodiak,
         repository?: IQueueRepository<T>,
-        serializer?: IJobSerializer,
+        serializerOrOptions?: IJobSerializer | QueueOptions,
         pipelining?: PipeliningOptions,
+        rateLimiter?: RateLimiterOptions,
     ) {
         super();
 
+        let serializer: IJobSerializer | undefined;
+        let pipeOpts: PipeliningOptions | undefined = pipelining;
+        let limiterOpts: RateLimiterOptions | undefined = rateLimiter;
+        let dedupOpts: boolean | DeduplicationOptions | undefined;
+
+        if (
+            serializerOrOptions &&
+            typeof serializerOrOptions === "object" &&
+            !("serialize" in serializerOrOptions)
+        ) {
+            this.options = serializerOrOptions;
+            serializer = serializerOrOptions.serializer;
+            pipeOpts = serializerOrOptions.pipelining ?? pipeOpts;
+            limiterOpts =
+                serializerOrOptions.rateLimiter ?? serializerOrOptions.limiter ?? limiterOpts;
+            dedupOpts = serializerOrOptions.deduplication;
+        } else if (serializerOrOptions && "serialize" in serializerOrOptions) {
+            serializer = serializerOrOptions;
+            this.options = {
+                serializer,
+                pipelining,
+                rateLimiter,
+            };
+        } else {
+            this.options = {};
+        }
+
+        this.defaultDeduplication = dedupOpts;
+
         const conn = this.kodiak.connection.duplicate();
         this.connection = conn;
+        const effectiveSerializer = serializer ?? this.kodiak.serializer;
         this.queueRepository =
             repository ??
             new DragonflyQueueRepository<T>(
                 name,
                 conn,
                 this.kodiak.prefix,
-                serializer ?? this.kodiak.serializer,
-                pipelining ?? this.kodiak.pipelining,
+                effectiveSerializer,
+                pipeOpts ?? this.kodiak.pipelining,
+                limiterOpts,
             );
 
-        this.addJobUseCase = new AddJobUseCase<T>(this.queueRepository);
+        this.addJobUseCase = new AddJobUseCase<T>(this.queueRepository, effectiveSerializer);
+        const dlqRepo = this.queueRepository as unknown as IDLQRepository<T>;
+        this.getFailedCountUseCase = new GetFailedCountUseCase<T>(dlqRepo);
+        this.getFailedJobsUseCase = new GetFailedJobsUseCase<T>(dlqRepo);
+        this.retryFailedJobUseCase = new RetryFailedJobUseCase<T>(dlqRepo);
+        this.cleanFailedJobsUseCase = new CleanFailedJobsUseCase<T>(dlqRepo);
+
+        const rateLimitRepo = this.queueRepository as unknown as IRateLimiterRepository;
+        this.consumeRateLimitUseCase = new ConsumeRateLimitUseCase(rateLimitRepo);
+        this.getRateLimitStatusUseCase = new GetRateLimitStatusUseCase(rateLimitRepo);
 
         this.startScheduler();
     }
 
-    public async add(id: string, data: T, options?: JobOptions): Promise<Job<T>> {
-        return this.addJobUseCase.execute(id, data, options);
+    public async add(
+        id: string,
+        data: T,
+        options?: JobOptions | JobOptionsBuilder,
+    ): Promise<Job<T>> {
+        const resolvedOptions = resolveJobOptions(options);
+
+        let mergedOptions = resolvedOptions;
+        if (
+            this.defaultDeduplication !== undefined &&
+            resolvedOptions?.deduplication === undefined
+        ) {
+            mergedOptions = {
+                ...resolvedOptions,
+                deduplication: this.defaultDeduplication,
+            };
+        }
+        return this.addJobUseCase.execute(id, data, mergedOptions);
+    }
+
+    public job(id: string, data: T): JobBuilder<T> {
+        return new JobBuilder<T>(id, data, this);
+    }
+
+    public async removeDeduplicationKey(dedupId: string): Promise<boolean> {
+        return (await this.queueRepository.deleteDeduplicationKey?.(dedupId)) ?? false;
+    }
+
+    public async getFailedCount(): Promise<number> {
+        return this.getFailedCountUseCase.execute();
+    }
+
+    public async getFailedJobs(start = 0, limit = 20): Promise<Job<T>[]> {
+        return this.getFailedJobsUseCase.execute(start, limit);
+    }
+
+    public async retryJob(jobId: string): Promise<boolean> {
+        return this.retryFailedJobUseCase.execute(jobId);
+    }
+
+    public async retryAllFailed(limit = 100): Promise<number> {
+        return this.retryFailedJobUseCase.executeAll(limit);
+    }
+
+    public async cleanFailed(olderThanMs = 0): Promise<number> {
+        return this.cleanFailedJobsUseCase.execute(olderThanMs);
+    }
+
+    public async consumeRateLimit(count = 1): Promise<boolean> {
+        return this.consumeRateLimitUseCase.execute(count);
+    }
+
+    public async getRateLimitStatus(): Promise<IRateLimitStatus | null> {
+        return this.getRateLimitStatusUseCase.execute();
     }
 
     public async close(): Promise<void> {

@@ -1,26 +1,53 @@
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
 import type { BackoffStrategy } from "../../domain/strategies/backoff.strategy.js";
+import type { RateLimiterOptions } from "./rate-limiter-options.dto.js";
 
+/**
+ * Configuration options for adaptive prefetching.
+ * Dynamically scales the batch fetch size according to queue backlog and worker throughput.
+ *
+ * @example
+ * ```ts
+ * const prefetchOpts: AdaptivePrefetchOptions = {
+ *     min: 10,
+ *     max: 150,
+ *     scaleUpFactor: 1.5,
+ * };
+ * ```
+ */
 export interface AdaptivePrefetchOptions {
     /**
-     * Minimum batch size to fetch.
+     * Minimum batch size to fetch per iteration.
      * Default: Math.max(concurrency * 5, 20)
      */
     min?: number;
 
     /**
-     * Maximum batch size to fetch under sustained backlog.
+     * Maximum batch size to fetch under sustained queue backlog.
      * Default: 100
      */
     max?: number;
 
     /**
-     * Scale-up multiplier when a full batch is retrieved.
+     * Scale-up multiplier applied when a full batch is retrieved.
      * Default: 2
      */
     scaleUpFactor?: number;
 }
 
+/**
+ * Options for ACK pipelining and micro-batching.
+ * Buffers job completions and acknowledges them in bulk pipelines to minimize network round-trips.
+ *
+ * @example
+ * ```ts
+ * const ackOpts: WorkerAckPipeliningOptions = {
+ *     enabled: true,
+ *     maxBatch: 100,
+ *     maxWaitMs: 5,
+ * };
+ * ```
+ */
 export interface WorkerAckPipeliningOptions {
     /**
      * Enable or disable ACK pipelining.
@@ -43,148 +70,183 @@ export interface WorkerAckPipeliningOptions {
 }
 
 /**
- * Configuration options for worker behavior.
- * All fields are optional.
+ * Configuration options for worker behavior, lifecycle management,
+ * concurrency, prefetching, rate limiting, and backpressure.
+ *
+ * @example
+ * ### 1. High-Throughput Batching Worker
+ * ```ts
+ * const worker = kodiak.createWorker("heavy-tasks", async (job) => {
+ *     await processTask(job.data);
+ * }, {
+ *     concurrency: 20,
+ *     prefetch: { min: 20, max: 200, scaleUpFactor: 2 },
+ *     ackPipelining: { maxBatch: 100, maxWaitMs: 2 },
+ *     removeOnSuccess: true, // Auto-delete completed keys
+ *     sendEvents: false,     // Disable event emission for maximum speed
+ * });
+ * ```
+ *
+ * @example
+ * ### 2. Resilient Worker with Heartbeat & Backpressure Credits
+ * ```ts
+ * const worker = kodiak.createWorker("long-jobs", async (job) => {
+ *     await performLongOperation(job.data);
+ * }, {
+ *     concurrency: 5,
+ *     lockDuration: 60_000,
+ *     heartbeatEnabled: true,
+ *     heartbeatInterval: 10_000,
+ *     credits: { maxCredits: 20, replenishBatchThreshold: 5 },
+ *     gracefulShutdownTimeout: 30_000,
+ * });
+ * ```
  */
 export interface WorkerOptions {
     /**
-     * Maximum number of concurrent workers processing tasks.
+     * Maximum number of concurrent tasks processed by this worker.
      *
-     * Optional. Default: 1
-     *
-     * Example: 5
+     * @default 1
+     * @example 10
      */
     concurrency?: number;
 
     /**
      * Number of messages to prefetch per worker, or 'auto' / AdaptivePrefetchOptions
-     * for dynamic auto-tuning.
+     * for dynamic auto-tuning based on traffic.
      *
-     * Optional. Default: 'auto'
-     *
-     * Examples:
-     * - 50 (fixed)
-     * - 'auto' (dynamically scales from 20 to 100 based on backlog)
+     * @default 'auto'
+     * @example
+     * - 50 (fixed prefetch buffer)
+     * - 'auto' (dynamically scales from 20 to 100)
      * - { min: 25, max: 200 }
      */
     prefetch?: number | "auto" | AdaptivePrefetchOptions;
 
     /**
      * Configures ACK pipelining / micro-batching.
-     * Eliminates network round-trips by grouping completed jobs into pipelines.
+     * Eliminates network round-trips by grouping completed jobs into single pipeline executions.
      *
-     * Optional. Default: true (or configure with options)
+     * @default true
      */
     ackPipelining?: boolean | WorkerAckPipeliningOptions;
 
     /**
-     * Lock duration in milliseconds for a claimed task.
+     * Lock duration in milliseconds for a claimed task before it is considered stalled.
      *
-     * Optional. Default: 30000 (30 seconds)
-     *
-     * Examples:
-     * - 30000 (default, reasonable for short tasks)
-     * - 60000 (longer tasks)
-     * - 120000 (very long-running tasks)
-     *
-     * Usage:
-     * ```ts
-     * const opts: WorkerOptions = { lockDuration: 60000 };
-     * ```
+     * @default 30000 (30 seconds)
+     * @example 60000
      */
     lockDuration?: number;
 
     /**
-     * Time in milliseconds to wait for in-flight tasks to finish during shutdown.
+     * Time in milliseconds to wait for in-flight tasks to finish during graceful shutdown.
      *
-     * Optional. Default: 30000 (30 seconds)
-     *
-     * Examples:
-     * - 15000 (short grace period)
-     * - 30000 (default)
-     * - 120000 (allow long jobs to finish)
-     *
-     * Usage:
-     * ```ts
-     * const opts: WorkerOptions = { gracefulShutdownTimeout: 120000 };
-     * ```
+     * @default 30000 (30 seconds)
+     * @example 15000
      */
     gracefulShutdownTimeout?: number;
 
     /**
-     * Map of named backoff strategies used for retrying tasks.
+     * Map of named backoff strategies used for retrying failed tasks.
      *
-     * Optional. Default: {}
-     *
-     * ```json
-     * Example: {
-     *  "exponential": myExponentialBackoff
-     * }
-     * ```
-     *
-     * More examples:
-     * More examples (implementations must be functions matching BackoffStrategy:
+     * @default {}
+     * @example
      * ```ts
-     * import type { BackoffStrategy } from "../../domain/strategies/backoff.strategy";
-     *
-     * const backoffStrategies: Record<string, BackoffStrategy> = {
-     *   fixed: (attemptsMade, delay) => delay,
-     *   exponential: (attemptsMade, delay) => delay * Math.pow(2, attemptsMade - 1),
+     * const backoffStrategies = {
+     *     exponential: (attempts, delay) => delay * Math.pow(2, attempts - 1),
+     *     jitter: (attempts, delay) => delay + Math.random() * 1000,
      * };
-     *
-     * const opts: WorkerOptions = { backoffStrategies };
      * ```
      */
     backoffStrategies?: Record<string, BackoffStrategy>;
 
     /**
-     * Enable or disable heartbeat mechanism that periodically extends locks.
+     * Enable or disable the heartbeat mechanism that periodically refreshes job lock TTL in Redis.
+     * Recommended for jobs whose execution duration is unpredictable or may exceed lockDuration.
      *
-     * Optional. Default: false
-     *
-     * Examples:
-     * - `false` (keep current stalled-detection only)
-     * - `true` (enable heartbeat; worker will periodically refresh locks)
-     *
-     * Usage:
-     * ```ts
-     * const opts: WorkerOptions = { heartbeatEnabled: true };
-     * ```
+     * @default false
+     * @example true
      */
     heartbeatEnabled?: boolean;
 
     /**
-     * Interval in milliseconds between heartbeats.
+     * Interval in milliseconds between heartbeat lock extension calls.
      *
-     * Optional. Default: Math.max(1000, lockDuration/2)
-     *
-     * Examples:
-     * - 1000 (very frequent, higher Redis load)
-     * - 5000 (balanced)
-     * - 15000 (infrequent, suitable for long lockDuration)
-     *
-     * Usage:
-     * ```ts
-     * const opts: WorkerOptions = { heartbeatEnabled: true, heartbeatInterval: 5000 };
-     * ```
+     * @default Math.max(1000, lockDuration/2)
+     * @example 5000
      */
     heartbeatInterval?: number;
 
     /**
      * Custom serializer for decoding job data payloads.
+     * Defaults to the Kodiak instance serializer.
      */
     serializer?: IJobSerializer;
 
     /**
      * Enables detailed internal execution telemetry (timings for fetch, processing, ACK, idle).
-     * Useful for diagnostics, profiling and benchmarks.
-     * Default: false
+     * Useful for diagnostics, profiling, and performance benchmarks.
+     *
+     * @default false
      */
     telemetry?: boolean;
 
     /**
      * Credit-based reactive backpressure configuration.
      * Prevents worker memory saturation (OOM) by capping in-flight and prefetched jobs.
+     *
+     * @example
+     * - 50 (max 50 concurrent in-flight credits)
+     * - { maxCredits: 100, replenishBatchThreshold: 20 }
      */
     credits?: number | { maxCredits: number; replenishBatchThreshold?: number };
+
+    /**
+     * Rate limiter configuration for the worker.
+     * If specified, throttles job consumption according to the token-bucket algorithm.
+     */
+    rateLimiter?: RateLimiterOptions;
+
+    /**
+     * Alias for rateLimiter.
+     */
+    limiter?: RateLimiterOptions;
+
+    /**
+     * Disable if this worker does not need to send job events back to other queues.
+     * Setting to false skips event emission on this worker instance, maximizing throughput.
+     * Inherited from QueueOptions if not explicitly set.
+     *
+     * @default true
+     */
+    sendEvents?: boolean;
+
+    /**
+     * Disable if this worker does not need to associate events with specific Job instances.
+     * This normally improves memory usage, as the storage of jobs is unnecessary for many use-cases.
+     * Inherited from QueueOptions if not explicitly set.
+     *
+     * @default true
+     */
+    storeJobs?: boolean;
+
+    /**
+     * Enable to have this worker automatically remove its successfully completed jobs from Redis,
+     * so as to keep memory usage down.
+     * Inherited from QueueOptions if not explicitly set.
+     *
+     * @default false
+     */
+    removeOnSuccess?: boolean;
+
+    /**
+     * Enable to have this worker automatically remove its failed jobs from Redis,
+     * so as to keep memory usage down. This will not remove jobs that are set to retry
+     * unless they fail all their retries.
+     * Inherited from QueueOptions if not explicitly set.
+     *
+     * @default false
+     */
+    removeOnFailure?: boolean;
 }

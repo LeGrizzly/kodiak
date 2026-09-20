@@ -1,23 +1,23 @@
-import { jest } from "@jest/globals";
+import { type Mocked, vi } from "vitest";
 import { CompleteJobUseCase } from "../../src/application/use-cases/complete-job.use-case.js";
 import type { IQueueRepository } from "../../src/domain/repositories/queue.repository.js";
 
 describe("CompleteJobUseCase", () => {
     let completeJobUseCase: CompleteJobUseCase<unknown>;
-    let mockQueueRepository: jest.Mocked<IQueueRepository<unknown>>;
+    let mockQueueRepository: Mocked<IQueueRepository<unknown>>;
 
     beforeEach(() => {
         mockQueueRepository = {
-            add: jest.fn(),
-            fetchNext: jest.fn(),
-            markAsCompleted: jest.fn().mockResolvedValue(undefined as never),
-            markAsFailed: jest.fn(),
-            updateProgress: jest.fn(),
-            fetchNextJobs: jest.fn(),
-            promoteDelayedJobs: jest.fn(),
-            recoverStalledJobs: jest.fn(),
-            extendLock: jest.fn(),
-        } as unknown as jest.Mocked<IQueueRepository<unknown>>;
+            add: vi.fn(),
+            fetchNext: vi.fn(),
+            markAsCompleted: vi.fn().mockResolvedValue(undefined as never),
+            markAsFailed: vi.fn(),
+            updateProgress: vi.fn(),
+            fetchNextJobs: vi.fn(),
+            promoteDelayedJobs: vi.fn(),
+            recoverStalledJobs: vi.fn(),
+            extendLock: vi.fn(),
+        } as unknown as Mocked<IQueueRepository<unknown>>;
         completeJobUseCase = new CompleteJobUseCase(mockQueueRepository);
     });
 
@@ -53,7 +53,7 @@ describe("CompleteJobUseCase", () => {
     });
 
     it("should call markManyAsCompleted when implemented on repository", async () => {
-        const markManyAsCompleted = jest
+        const markManyAsCompleted = vi
             .fn<
                 (jobs: { jobId: string; completedAt: Date; ownerToken?: string }) => Promise<void>
             >()
@@ -99,7 +99,7 @@ describe("CompleteJobUseCase", () => {
     });
 
     it("should handle empty jobs array in executeMany without errors", async () => {
-        const markManyAsCompleted = jest
+        const markManyAsCompleted = vi
             .fn<
                 (jobs: { jobId: string; completedAt: Date; ownerToken?: string }) => Promise<void>
             >()
