@@ -1,3 +1,24 @@
+# [1.3.0](https://github.com/LeGrizzly/kodiak/compare/v1.2.0...v1.3.0) (2026-09-20)
+
+
+### Features
+
+* add comprehensive tests for JobOptionsBuilder, QueueOptionsBuilder, and WorkerOptionsBuilder ([78c3c55](https://github.com/LeGrizzly/kodiak/commit/78c3c55241c4697e09e0862ce2da7e9ed9a5520c))
+* add rate limiting functionality with integration and unit tests ([1a3babc](https://github.com/LeGrizzly/kodiak/commit/1a3babc97a1babd65e66358d84e12c0ce0072c36)), closes [#42](https://github.com/LeGrizzly/kodiak/issues/42) [#43](https://github.com/LeGrizzly/kodiak/issues/43) [#44](https://github.com/LeGrizzly/kodiak/issues/44) [#45](https://github.com/LeGrizzly/kodiak/issues/45) [#46](https://github.com/LeGrizzly/kodiak/issues/46)
+* add tests for JobBuilder, QueueBuilder, and WorkerBuilder; enhance JobOptionsBuilder and QueueOptionsBuilder with new features ([2d3e4e1](https://github.com/LeGrizzly/kodiak/commit/2d3e4e1091adead040f02cdb25dd65361c0df8bc))
+* implement atomic job deduplication with sliding idempotency window ([0209524](https://github.com/LeGrizzly/kodiak/commit/02095242c42ce7fbea01408cdf987dc5d6cecbe9))
+* implement rate limiting functionality with token bucket algorithm and related use cases ([01a87b9](https://github.com/LeGrizzly/kodiak/commit/01a87b914ad7a33aa9bfcc81072bc9a7ad8004ed)), closes [#42](https://github.com/LeGrizzly/kodiak/issues/42) [#43](https://github.com/LeGrizzly/kodiak/issues/43) [#44](https://github.com/LeGrizzly/kodiak/issues/44) [#45](https://github.com/LeGrizzly/kodiak/issues/45) [#46](https://github.com/LeGrizzly/kodiak/issues/46)
+* implement use cases for managing failed jobs in the queue system ([7f951a6](https://github.com/LeGrizzly/kodiak/commit/7f951a65823a9d240ab6f63a2d07c1c2343f516f)), closes [#37](https://github.com/LeGrizzly/kodiak/issues/37)
+* Implement WorkerOptionsBuilder and JobBuilder for enhanced worker and job configuration ([f60bb92](https://github.com/LeGrizzly/kodiak/commit/f60bb927db4781ad958638ed0a932866f5761c26))
+* migrate from Jest to Vitest for testing framework with configuration updates ([9b35c0f](https://github.com/LeGrizzly/kodiak/commit/9b35c0f6b5365e447f67fa852debf98cd38f4998))
+* refactor queue and worker creation to use builder pattern for improved configuration ([e199494](https://github.com/LeGrizzly/kodiak/commit/e199494c572cf9d932b542b880e08730f7554168))
+* refactor task and worker creation to use builder pattern for improved readability ([150961a](https://github.com/LeGrizzly/kodiak/commit/150961af3ed7a5239e3c85be31939ddcbe73161c))
+
+
+### Performance Improvements
+
+* optimize worker throughput with microtask pipelining, adaptive backoff, and work-stealing ([6c3d9a6](https://github.com/LeGrizzly/kodiak/commit/6c3d9a67587046585d8b7bea5ce7b7897d9d98b9))
+
 # [1.2.0](https://github.com/LeGrizzly/kodiak/compare/v1.1.0...v1.2.0) (2026-09-15)
 
 
