@@ -17,12 +17,12 @@ interface EmailPayload {
 }
 
 // 3. Créer une file d'attente (Queue)
-const emailQueue = kodiak.createQueue<EmailPayload>("email-queue");
+const emailQueue = kodiak.queueBuilder<EmailPayload>("email-queue").create();
 
 // 4. Créer un Worker pour traiter les jobs
-const worker = kodiak.createWorker<EmailPayload>(
-    "email-queue",
-    async (job: Job<EmailPayload>) => {
+const worker = kodiak
+    .workerBuilder<EmailPayload>("email-queue")
+    .handler(async (job: Job<EmailPayload>) => {
         console.log(`📨 Envoi de l'email à ${job.data.to}...`);
 
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -35,12 +35,10 @@ const worker = kodiak.createWorker<EmailPayload>(
         await job.updateProgress?.(100);
 
         console.log(`✅ Email envoyé : "${job.data.subject}"`);
-    },
-    {
-        concurrency: 1,
-        prefetch: 2,
-    },
-);
+    })
+    .concurrency(1)
+    .prefetch(2)
+    .create();
 
 // Écouter les événements
 worker.on("completed", (job: Job<EmailPayload>) =>

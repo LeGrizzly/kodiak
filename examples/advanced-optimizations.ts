@@ -1,4 +1,4 @@
-import { Kodiak, task } from "../src/presentation/index.js";
+import { jobOptions, Kodiak, task, workerOptions } from "../src/presentation/index.js";
 
 // 1. Initialiser Kodiak avec Auto-Pipelining adaptatif
 const kodiak = new Kodiak({
@@ -16,13 +16,9 @@ interface InvoicePayload {
     currency: string;
 }
 
-const invoiceTask = task<InvoicePayload>({
-    name: "generate-invoice",
-    options: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 500 },
-    },
-});
+const invoiceTask = task<InvoicePayload>("generate-invoice")
+    .attempts(3)
+    .backoff("exponential", 500);
 
 // 2. Déclaration du worker utilisant le nouveau JobContext enrichi ({ data, logger, updateProgress, heartbeat })
 const worker = kodiak.worker(
@@ -34,7 +30,7 @@ const worker = kodiak.worker(
         await updateProgress(100);
         logger.info(`Invoice ${data.invoiceId} generated successfully.`);
     },
-    { concurrency: 5, prefetch: 10, heartbeatEnabled: true },
+    workerOptions().concurrency(5).prefetch(10).heartbeat(true),
 );
 
 await worker.start();
@@ -51,7 +47,7 @@ const pushPromises = Array.from({ length: 10 }).map((_, i) =>
             amount: 150 * (i + 1),
             currency: "EUR",
         },
-        { traceparent },
+        jobOptions().traceparent(traceparent),
     ),
 );
 

@@ -1,4 +1,4 @@
-import { Kodiak, task } from "../src/presentation/index.js";
+import { Kodiak, task, workerOptions } from "../src/presentation/index.js";
 
 // 1. Initialiser Kodiak
 const kodiak = new Kodiak({
@@ -12,13 +12,9 @@ interface UserWelcomePayload {
     email: string;
 }
 
-export const welcomeEmailTask = task<UserWelcomePayload>({
-    name: "welcome-email",
-    options: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 1000 },
-    },
-});
+export const welcomeEmailTask = task<UserWelcomePayload>("welcome-email")
+    .attempts(3)
+    .backoff("exponential", 1000);
 
 // 3. Déclaration du worker fluide et sans boilerplate
 const worker = kodiak.worker(
@@ -28,7 +24,7 @@ const worker = kodiak.worker(
         await new Promise((resolve) => setTimeout(resolve, 200));
         console.log(`[Task: ${job.id}] Email sent!`);
     },
-    { concurrency: 5, prefetch: 10, heartbeatEnabled: true },
+    workerOptions().concurrency(5).prefetch(10).heartbeat(true),
 );
 
 await worker.start();
