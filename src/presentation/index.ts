@@ -4,13 +4,25 @@ export {
     type JobContextPoolOptions,
     PooledJobContext,
 } from "../application/dtos/job-context-pool.js";
+export {
+    JobOptionsBuilder,
+    jobOptions,
+} from "../application/dtos/job-options.builder.js";
 export type {
     BackoffOptions,
     JobOptions,
     RepeatOptions,
 } from "../application/dtos/job-options.dto.js";
+export {
+    QueueOptionsBuilder,
+    queueOptions,
+} from "../application/dtos/queue-options.builder.js";
 export type { QueueOptions } from "../application/dtos/queue-options.dto.js";
 export type { RateLimiterOptions } from "../application/dtos/rate-limiter-options.dto.js";
+export {
+    WorkerOptionsBuilder,
+    workerOptions,
+} from "../application/dtos/worker-options.builder.js";
 export type {
     AdaptivePrefetchOptions,
     WorkerAckPipeliningOptions,
@@ -51,6 +63,7 @@ export type {
     IQueueRepository,
     IRateLimiterRepository,
     IRateLimitStatus,
+    PipeliningOptions,
 } from "../domain/repositories/queue.repository.js";
 export type { IJobSerializer } from "../domain/serializers/job-serializer.interface.js";
 export type { BackoffStrategy } from "../domain/strategies/backoff.strategy.js";
@@ -58,10 +71,7 @@ export type {
     ITimerHandle,
     ITimingWheel,
 } from "../domain/timing-wheel/timing-wheel.interface.js";
-export {
-    DragonflyQueueRepository,
-    type PipeliningOptions,
-} from "../infrastructure/dragonfly/dragonfly-queue.repository.js";
+export { DragonflyQueueRepository } from "../infrastructure/dragonfly/dragonfly-queue.repository.js";
 export { SlabBufferPool } from "../infrastructure/memory/slab-buffer-pool.js";
 export { KodiakFrameCodec } from "../infrastructure/protocol/kodiak-frame-codec.js";
 export {
@@ -74,8 +84,10 @@ export {
     type TimingWheelOptions,
 } from "../infrastructure/timing-wheel/hierarchical-timing-wheel.js";
 export { AdaptivePrefetchManager } from "./adaptive-prefetch.js";
+export * from "./job-builder.js";
 export * from "./kodiak.js";
 export * from "./queue.js";
+export * from "./queue-builder.js";
 export * from "./task.js";
 export * from "./worker.js";
 export {
@@ -83,3 +95,4 @@ export {
     type WorkerAckBufferOptions,
     type WorkerAckItem,
 } from "./worker-ack-buffer.js";
+export * from "./worker-builder.js";

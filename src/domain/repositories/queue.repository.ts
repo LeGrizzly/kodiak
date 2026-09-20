@@ -37,6 +37,28 @@ export interface DeduplicationOptions {
     strategy?: "ignore-if-exists" | "throw";
 }
 
+/**
+ * Auto-pipelining micro-batching configuration options for Redis / Dragonfly commands.
+ */
+export interface PipeliningOptions {
+    /**
+     * Whether auto-pipelining is enabled. Default: true
+     */
+    enabled?: boolean;
+    /**
+     * Maximum number of commands/operations accumulated before triggering an immediate pipeline flush.
+     */
+    maxBatch?: number;
+    /**
+     * Maximum time in milliseconds to wait before flushing pending pipeline commands.
+     */
+    maxWaitMs?: number;
+    /**
+     * Alias for maxWaitMs: maximum time in milliseconds to wait before flushing pending pipeline commands.
+     */
+    flushIntervalMs?: number;
+}
+
 export interface IQueueRepository<T>
     extends Partial<IDLQRepository<T>>,
         Partial<IRateLimiterRepository> {

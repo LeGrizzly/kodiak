@@ -1,4 +1,8 @@
 import { EventEmitter } from "node:events";
+import {
+    type JobOptionsBuilder,
+    resolveJobOptions,
+} from "../application/dtos/job-options.builder.js";
 import type { JobOptions } from "../application/dtos/job-options.dto.js";
 import type { QueueOptions } from "../application/dtos/queue-options.dto.js";
 import type { RateLimiterOptions } from "../application/dtos/rate-limiter-options.dto.js";
@@ -22,6 +26,7 @@ import {
     DragonflyQueueRepository,
     type PipeliningOptions,
 } from "../infrastructure/dragonfly/dragonfly-queue.repository.js";
+import { JobBuilder } from "./job-builder.js";
 import type { Kodiak } from "./kodiak.js";
 
 export class Queue<T> extends EventEmitter {
@@ -34,6 +39,7 @@ export class Queue<T> extends EventEmitter {
     private readonly getRateLimitStatusUseCase: GetRateLimitStatusUseCase;
     private readonly queueRepository: IQueueRepository<T>;
     private readonly defaultDeduplication?: boolean | DeduplicationOptions;
+    public readonly options: QueueOptions;
     private schedulerInterval: NodeJS.Timeout | null = null;
     private recoveringStalledJobs = false;
     private readonly connection: { quit: () => Promise<unknown> };
@@ -58,6 +64,7 @@ export class Queue<T> extends EventEmitter {
             typeof serializerOrOptions === "object" &&
             !("serialize" in serializerOrOptions)
         ) {
+            this.options = serializerOrOptions;
             serializer = serializerOrOptions.serializer;
             pipeOpts = serializerOrOptions.pipelining ?? pipeOpts;
             limiterOpts =
@@ -65,6 +72,13 @@ export class Queue<T> extends EventEmitter {
             dedupOpts = serializerOrOptions.deduplication;
         } else if (serializerOrOptions && "serialize" in serializerOrOptions) {
             serializer = serializerOrOptions;
+            this.options = {
+                serializer,
+                pipelining,
+                rateLimiter,
+            };
+        } else {
+            this.options = {};
         }
 
         this.defaultDeduplication = dedupOpts;
@@ -97,15 +111,28 @@ export class Queue<T> extends EventEmitter {
         this.startScheduler();
     }
 
-    public async add(id: string, data: T, options?: JobOptions): Promise<Job<T>> {
-        let mergedOptions = options;
-        if (this.defaultDeduplication !== undefined && options?.deduplication === undefined) {
+    public async add(
+        id: string,
+        data: T,
+        options?: JobOptions | JobOptionsBuilder,
+    ): Promise<Job<T>> {
+        const resolvedOptions = resolveJobOptions(options);
+
+        let mergedOptions = resolvedOptions;
+        if (
+            this.defaultDeduplication !== undefined &&
+            resolvedOptions?.deduplication === undefined
+        ) {
             mergedOptions = {
-                ...options,
+                ...resolvedOptions,
                 deduplication: this.defaultDeduplication,
             };
         }
         return this.addJobUseCase.execute(id, data, mergedOptions);
+    }
+
+    public job(id: string, data: T): JobBuilder<T> {
+        return new JobBuilder<T>(id, data, this);
     }
 
     public async removeDeduplicationKey(dedupId: string): Promise<boolean> {

@@ -8,6 +8,7 @@ import type {
     IQueueRepository,
     IRateLimiterRepository,
     IRateLimitStatus,
+    PipeliningOptions,
 } from "../../domain/repositories/queue.repository.js";
 import type { IJobSerializer } from "../../domain/serializers/job-serializer.interface.js";
 import { MsgpackJobSerializer } from "../serializers/msgpack-job.serializer.js";
@@ -15,10 +16,7 @@ import type { IConnection } from "./dragonfly-connection.js";
 import { DragonflyKeyTopology } from "./dragonfly-key-topology.js";
 import { DragonflyScriptManager, type ScriptName } from "./dragonfly-script-manager.js";
 
-export interface PipeliningOptions {
-    maxWaitMs?: number;
-    maxBatch?: number;
-}
+export type { PipeliningOptions } from "../../domain/repositories/queue.repository.js";
 
 interface PendingAdd<T> {
     job: Job<T>;

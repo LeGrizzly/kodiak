@@ -192,6 +192,30 @@ export interface JobOptions {
      * - { ttl: 60000, strategy: "throw" }
      */
     deduplication?: boolean | DeduplicationOptions;
+
+    /**
+     * Override queue default: automatically remove this job from Redis upon successful completion.
+     *
+     * Optional. Defaults to queue-level removeOnSuccess setting.
+     *
+     * Example:
+     * ```ts
+     * const opts: JobOptions = { removeOnSuccess: true };
+     * ```
+     */
+    removeOnSuccess?: boolean;
+
+    /**
+     * Override queue default: automatically remove this job from Redis upon exhausting all retries.
+     *
+     * Optional. Defaults to queue-level removeOnFailure setting.
+     *
+     * Example:
+     * ```ts
+     * const opts: JobOptions = { removeOnFailure: true };
+     * ```
+     */
+    removeOnFailure?: boolean;
 }
 
 export type { DeduplicationOptions } from "../../domain/repositories/queue.repository.js";
