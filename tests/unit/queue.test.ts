@@ -24,6 +24,7 @@ vi.doMock("../../src/infrastructure/dragonfly/dragonfly-queue.repository.js", ()
 
 const { Queue } = await import("../../src/presentation/queue.js");
 
+import { JobBuilder } from "../../src/presentation/job-builder.js";
 import type { Kodiak } from "../../src/presentation/kodiak.js";
 
 describe("Unit: Queue", () => {
@@ -215,6 +216,15 @@ describe("Unit: Queue", () => {
             pipelining: { maxBatch: 10 },
         });
         expect(queue).toBeDefined();
+        await queue.close();
+    });
+
+    it("should return a JobBuilder via job method and allow adding a job", async () => {
+        const queue = new Queue("test-queue", mockKodiak);
+        const builder = queue.job("job-builder-1", { foo: "bar" });
+        expect(builder).toBeInstanceOf(JobBuilder);
+        await builder.priority(3).add();
+        expect(mockExecute).toHaveBeenCalledWith("job-builder-1", { foo: "bar" }, { priority: 3 });
         await queue.close();
     });
 });

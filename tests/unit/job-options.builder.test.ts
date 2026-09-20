@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { JobOptionsBuilder, jobOptions } from "../../src/application/dtos/job-options.builder.js";
+import {
+    JobOptionsBuilder,
+    jobOptions,
+    resolveJobOptions,
+} from "../../src/application/dtos/job-options.builder.js";
 
 describe("JobOptionsBuilder", () => {
     it("should instantiate with default empty options", () => {
         const builder = jobOptions();
         expect(builder).toBeInstanceOf(JobOptionsBuilder);
         expect(builder.build()).toEqual({});
+    });
+
+    it("should instantiate with another JobOptionsBuilder", () => {
+        const initial = jobOptions().priority(10);
+        const copied = new JobOptionsBuilder(initial);
+        expect(copied.build()).toEqual({ priority: 10 });
+    });
+
+    it("should correctly resolve job options via resolveJobOptions helper", () => {
+        expect(resolveJobOptions(undefined)).toBeUndefined();
+        expect(resolveJobOptions({ priority: 2 })).toEqual({ priority: 2 });
+        expect(resolveJobOptions(jobOptions().priority(3))).toEqual({ priority: 3 });
     });
 
     it("should configure priority, delay, and waitUntil immutably", () => {
@@ -33,6 +49,14 @@ describe("JobOptionsBuilder", () => {
             attempts: 3,
             backoff: { type: "fixed", delay: 1000 },
         });
+
+        // Test backoff with omitted delay defaulting to 0
+        const defaultDelayBackoff = (
+            jobOptions() as unknown as { backoff: (type: string) => JobOptionsBuilder }
+        )
+            .backoff("fixed")
+            .build();
+        expect(defaultDelayBackoff.backoff).toEqual({ type: "fixed", delay: 0 });
 
         const exponentialBackoff = jobOptions()
             .attempts(5)
@@ -77,10 +101,11 @@ describe("JobOptionsBuilder", () => {
             .removeOnSuccess()
             .removeOnFailure(false)
             .options({ attempts: 4 })
+            .options(jobOptions().priority(99))
             .build();
 
         expect(full).toEqual({
-            priority: 1,
+            priority: 99,
             traceparent: "00-trace-id-01",
             removeOnSuccess: true,
             removeOnFailure: false,

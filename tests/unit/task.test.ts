@@ -54,6 +54,14 @@ describe("task helper and TaskBuilder", () => {
         const task1 = task("t1").backoff({ type: "fixed", delay: 2000 });
         expect(task1.options?.backoff).toEqual({ type: "fixed", delay: 2000 });
 
+        // Test backoff with omitted delay defaulting to 0
+        const taskNoDelay = (
+            task("t-no-delay") as unknown as {
+                backoff: (type: string) => TaskBuilder<unknown>;
+            }
+        ).backoff("fixed");
+        expect(taskNoDelay.options?.backoff).toEqual({ type: "fixed", delay: 0 });
+
         const task2 = task("t2").repeat(60000, 5);
         expect(task2.options?.repeat).toEqual({ every: 60000, limit: 5 });
 
@@ -80,6 +88,11 @@ describe("task helper and TaskBuilder", () => {
 
         const booleanDedup = task("simple").deduplication(true);
         expect(booleanDedup.options?.deduplication).toBe(true);
+
+        const defaultFlags = task("defaults").deduplicate().removeOnSuccess().removeOnFailure();
+        expect(defaultFlags.options?.deduplication).toBe(true);
+        expect(defaultFlags.options?.removeOnSuccess).toBe(true);
+        expect(defaultFlags.options?.removeOnFailure).toBe(true);
     });
 
     it("should be immutable and allow safe task derivation", () => {
@@ -110,6 +123,16 @@ describe("task helper and TaskBuilder", () => {
             schema: schemaFn,
         });
         expect(def2).toEqual(def1);
+
+        // Test build() when options is undefined, schema is undefined, or either is present
+        const bareDef = task("bare").build();
+        expect(bareDef).toEqual({ name: "bare" });
+
+        const onlySchemaDef = task({ name: "only-schema", schema: schemaFn }).build();
+        expect(onlySchemaDef).toEqual({ name: "only-schema", schema: schemaFn });
+
+        const onlyOptsDef = task("only-opts").priority(1).build();
+        expect(onlyOptsDef).toEqual({ name: "only-opts", options: { priority: 1 } });
     });
 
     it("should support merging options via .withOptions() with JobOptions or JobOptionsBuilder", () => {

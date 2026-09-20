@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    resolveWorkerOptions,
     WorkerOptionsBuilder,
     workerOptions,
 } from "../../src/application/dtos/worker-options.builder.js";
@@ -11,6 +12,18 @@ describe("WorkerOptionsBuilder", () => {
         const builder = workerOptions();
         expect(builder).toBeInstanceOf(WorkerOptionsBuilder);
         expect(builder.build()).toEqual({});
+    });
+
+    it("should instantiate with another WorkerOptionsBuilder", () => {
+        const initial = workerOptions().concurrency(3);
+        const copied = new WorkerOptionsBuilder(initial);
+        expect(copied.build()).toEqual({ concurrency: 3 });
+    });
+
+    it("should correctly resolve worker options via resolveWorkerOptions helper", () => {
+        expect(resolveWorkerOptions(undefined)).toBeUndefined();
+        expect(resolveWorkerOptions({ concurrency: 5 })).toEqual({ concurrency: 5 });
+        expect(resolveWorkerOptions(workerOptions().concurrency(5))).toEqual({ concurrency: 5 });
     });
 
     it("should configure concurrency, prefetch, and ackPipelining", () => {
@@ -79,7 +92,7 @@ describe("WorkerOptionsBuilder", () => {
         });
     });
 
-    it("should configure credits, rateLimiter, telemetry, serializer, and lifecycle flags", () => {
+    it("should configure credits, rateLimiter, limiter alias, telemetry, serializer, and lifecycle flags", () => {
         const dummySerializer: IJobSerializer = {
             serialize: (d) => String(d),
             deserialize: <T>(raw: string | Uint8Array | Buffer) => String(raw) as unknown as T,
@@ -106,6 +119,26 @@ describe("WorkerOptionsBuilder", () => {
             removeOnFailure: false,
             sendEvents: false,
             storeJobs: false,
+        });
+
+        // Test limiter alias, options with object & builder, and default arguments
+        const withLimiter = workerOptions()
+            .limiter(rl)
+            .telemetry()
+            .sendEvents()
+            .storeJobs()
+            .removeOnFailure()
+            .options({ concurrency: 8 })
+            .options(workerOptions().concurrency(16))
+            .build();
+
+        expect(withLimiter).toEqual({
+            rateLimiter: rl,
+            telemetry: true,
+            sendEvents: true,
+            storeJobs: true,
+            removeOnFailure: true,
+            concurrency: 16,
         });
     });
 });

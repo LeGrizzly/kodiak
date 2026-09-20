@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
     QueueOptionsBuilder,
     queueOptions,
+    resolveQueueOptions,
 } from "../../src/application/dtos/queue-options.builder.js";
 import type { IJobSerializer } from "../../src/domain/serializers/job-serializer.interface.js";
 
@@ -10,6 +11,18 @@ describe("QueueOptionsBuilder", () => {
         const builder = queueOptions();
         expect(builder).toBeInstanceOf(QueueOptionsBuilder);
         expect(builder.build()).toEqual({});
+    });
+
+    it("should instantiate with another QueueOptionsBuilder", () => {
+        const initial = queueOptions().removeOnSuccess(true);
+        const copied = new QueueOptionsBuilder(initial);
+        expect(copied.build()).toEqual({ removeOnSuccess: true });
+    });
+
+    it("should correctly resolve queue options via resolveQueueOptions helper", () => {
+        expect(resolveQueueOptions(undefined)).toBeUndefined();
+        expect(resolveQueueOptions({ storeJobs: false })).toEqual({ storeJobs: false });
+        expect(resolveQueueOptions(queueOptions().storeJobs(false))).toEqual({ storeJobs: false });
     });
 
     it("should configure serializer and pipelining immutably", () => {
@@ -38,9 +51,12 @@ describe("QueueOptionsBuilder", () => {
         expect(withLimiter).toEqual({ rateLimiter: rl });
     });
 
-    it("should configure deduplication overloads", () => {
+    it("should configure deduplication overloads and defaults", () => {
         const autoDedup = queueOptions().deduplicate().build();
         expect(autoDedup).toEqual({ deduplication: true });
+
+        const explicitDedup = queueOptions().deduplicate(false).build();
+        expect(explicitDedup).toEqual({ deduplication: false });
 
         const customDedup = queueOptions().deduplication({ ttl: 60000, strategy: "throw" }).build();
         expect(customDedup).toEqual({
@@ -49,6 +65,13 @@ describe("QueueOptionsBuilder", () => {
     });
 
     it("should configure event flags and disableEvents preset", () => {
+        const defaultEvents = queueOptions().getEvents().sendEvents().storeJobs().build();
+        expect(defaultEvents).toEqual({
+            getEvents: true,
+            sendEvents: true,
+            storeJobs: true,
+        });
+
         const customEvents = queueOptions()
             .getEvents(false)
             .sendEvents(true)
@@ -73,11 +96,12 @@ describe("QueueOptionsBuilder", () => {
             .removeOnSuccess()
             .removeOnFailure()
             .options({ pipelining: { maxBatch: 10 } })
+            .options(queueOptions().removeOnFailure(false))
             .build();
 
         expect(full).toEqual({
             removeOnSuccess: true,
-            removeOnFailure: true,
+            removeOnFailure: false,
             pipelining: { maxBatch: 10 },
         });
     });
