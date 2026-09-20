@@ -179,24 +179,22 @@ async function runScenario(
     });
     const monitor = new DragonflyMonitor(kodiak.connection);
     const queueName = `bench-${jobCount}-${concurrency}-${Date.now()}`;
-    const queue = kodiak.createQueue<Payload>(queueName);
+    const queue = kodiak.queueBuilder<Payload>(queueName).create();
 
     const latencies: LatencySample[] = [];
     let completed = 0;
 
-    const worker = kodiak.createWorker<Payload>(
-        queueName,
-        async () => {
+    const worker = kodiak
+        .workerBuilder<Payload>(queueName)
+        .handler(async () => {
             // Minimal handler
             return;
-        },
-        {
-            concurrency,
-            prefetch: "auto",
-            ackPipelining: isPipelined ? { maxBatch: 100, maxWaitMs: 0 } : false,
-            telemetry: true,
-        },
-    );
+        })
+        .concurrency(concurrency)
+        .prefetch("auto")
+        .ackPipelining(isPipelined ? { maxBatch: 100, maxWaitMs: 0 } : false)
+        .telemetry(true)
+        .create();
 
 
     worker.on("error", () => {
