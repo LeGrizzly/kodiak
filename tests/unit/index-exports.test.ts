@@ -25,6 +25,16 @@ describe("Index Exports", () => {
         expect(KodiakIndex.ConsumeRateLimitUseCase).toBeDefined();
         expect(KodiakIndex.GetRateLimitStatusUseCase).toBeDefined();
         expect(KodiakIndex.JobAlreadyExistsError).toBeDefined();
+        expect(KodiakIndex.JobOptionsBuilder).toBeDefined();
+        expect(KodiakIndex.jobOptions).toBeDefined();
+        expect(KodiakIndex.QueueOptionsBuilder).toBeDefined();
+        expect(KodiakIndex.queueOptions).toBeDefined();
+        expect(KodiakIndex.WorkerOptionsBuilder).toBeDefined();
+        expect(KodiakIndex.workerOptions).toBeDefined();
+        expect(KodiakIndex.JobBuilder).toBeDefined();
+        expect(KodiakIndex.QueueBuilder).toBeDefined();
+        expect(KodiakIndex.WorkerBuilder).toBeDefined();
+        expect(KodiakIndex.TaskBuilder).toBeDefined();
     });
 
     it("should export all dragonfly infrastructure classes", () => {

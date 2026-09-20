@@ -1,7 +1,7 @@
 import type { Redis } from "ioredis";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IJobSerializer } from "../../src/domain/serializers/job-serializer.interface.js";
-import type { TaskDefinition } from "../../src/presentation/task.js";
+import { task } from "../../src/presentation/task.js";
 import type { WorkerProcessor } from "../../src/presentation/worker.js";
 
 const mockQuit = vi.fn().mockResolvedValue(undefined as never);
@@ -146,14 +146,13 @@ describe("Kodiak Facade", () => {
         });
 
         // 1. task with function schema
-        const fnSchemaTask: TaskDefinition<{ email: string }> = {
+        const fnSchemaTask = task<{ email: string }>({
             name: "email-queue",
             schema: (data: unknown) => {
                 const d = data as { email: string };
                 return { email: d.email.toLowerCase() };
             },
-            options: { priority: 2 },
-        };
+        }).priority(2);
         mockQueueAdd.mockResolvedValueOnce({ id: "job-1" } as never);
 
         await kodiak.push(fnSchemaTask, { email: "TEST@EXAMPLE.COM" }, { attempts: 5 });
@@ -165,7 +164,7 @@ describe("Kodiak Facade", () => {
         );
 
         // 2. task with object parse schema
-        const objSchemaTask: TaskDefinition<{ count: number }> = {
+        const objSchemaTask = task<{ count: number }>({
             name: "count-queue",
             schema: {
                 parse: (data: unknown) => {
@@ -173,7 +172,7 @@ describe("Kodiak Facade", () => {
                     return { count: d.count * 2 };
                 },
             },
-        };
+        });
         mockQueueAdd.mockResolvedValueOnce({ id: "job-2" } as never);
 
         await kodiak.push(objSchemaTask, { count: 10 });
@@ -181,9 +180,7 @@ describe("Kodiak Facade", () => {
         expect(mockQueueAdd).toHaveBeenCalledWith(expect.any(String), { count: 20 }, {});
 
         // 3. task without schema
-        const rawTask: TaskDefinition<string> = {
-            name: "raw-queue",
-        };
+        const rawTask = task<string>("raw-queue");
         mockQueueAdd.mockResolvedValueOnce({ id: "job-3" } as never);
 
         await kodiak.push(rawTask, "plain-data");
@@ -196,10 +193,7 @@ describe("Kodiak Facade", () => {
             connection: { host: "localhost", port: 6379 },
         });
 
-        const taskDef: TaskDefinition<string> = {
-            name: "typed-task",
-            options: { priority: 1 },
-        };
+        const taskDef = task<string>("typed-task").priority(1);
         const processor: WorkerProcessor<string> = vi.fn(async () => {});
 
         kodiak.worker(taskDef, processor, { concurrency: 2 });
